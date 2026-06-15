@@ -1,0 +1,15 @@
+{
+  "$schema": "./node_modules/ng-packagr/ng-package.schema.json",
+  "dest": "dist/cesium-wrapper",
+  "lib": {
+    "entryFile": "src/index.ts"
+  },
+  "assets": [
+    {
+      "input": "src/engines/cesium/assets",
+      "glob": "*.glb",
+      "output": "assets"
+    }
+  ],
+  "allowedNonPeerDependencies": ["@cesium/engine", "satellite.js", "tslib"]
+}

@@ -1,0 +1,11 @@
+/* Astro UXDS design tokens (var(--color-*)) come from the component CSS
+   bundle registered in angular.json ahead of this file. */
+
+html,
+body {
+  margin: 0;
+  height: 100%;
+  background: var(--color-background-base-default, #101923);
+  color: var(--color-text-primary, #ffffff);
+  font-family: var(--font-body-1-font-family, 'Roboto', sans-serif);
+}

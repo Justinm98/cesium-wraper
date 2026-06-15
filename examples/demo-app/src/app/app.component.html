@@ -1,0 +1,102 @@
+<rux-global-status-bar
+  app-domain="Satellite"
+  app-name="Digital Twin Demo"
+  username="Demo Operator"
+>
+  <rux-clock slot="right-side"></rux-clock>
+</rux-global-status-bar>
+
+@if (initFailure) {
+  <rux-notification open small message="Globe failed to start: {{ initFailure }}" status="critical">
+  </rux-notification>
+}
+
+<main class="layout">
+  <aside class="panel">
+    <rux-card>
+      <div slot="header">Satellite Catalog</div>
+      <ul class="entity-list">
+        @for (entry of catalog; track entry.config.id) {
+          <li>
+            <rux-status [attr.status]="entry.tracked ? 'normal' : 'off'"></rux-status>
+            <span class="entity-label">{{ entry.config.label }}</span>
+            <rux-switch
+              [attr.checked]="entry.tracked ? '' : null"
+              (ruxchange)="toggleTracked(entry)"
+            ></rux-switch>
+          </li>
+        }
+      </ul>
+    </rux-card>
+
+    <rux-card>
+      <div slot="header">Ground Terminals</div>
+      <ul class="entity-list">
+        @for (terminal of terminals; track terminal.id) {
+          <li>
+            <rux-status status="normal"></rux-status>
+            <span class="entity-label">{{ terminal.label }}</span>
+            <rux-button
+              borderless
+              icon-only
+              icon="delete"
+              size="small"
+              (click)="removeTerminal(terminal.id)"
+            ></rux-button>
+          </li>
+        }
+      </ul>
+
+      <div class="terminal-form">
+        <rux-input
+          label="Name"
+          size="small"
+          [attr.value]="newTerminalName"
+          (ruxinput)="newTerminalName = readValue($event)"
+        ></rux-input>
+        <rux-input
+          label="Latitude"
+          type="number"
+          size="small"
+          [attr.value]="newTerminalLat"
+          (ruxinput)="newTerminalLat = readValue($event)"
+        ></rux-input>
+        <rux-input
+          label="Longitude"
+          type="number"
+          size="small"
+          [attr.value]="newTerminalLon"
+          (ruxinput)="newTerminalLon = readValue($event)"
+        ></rux-input>
+        @if (terminalFormError) {
+          <span class="form-error">{{ terminalFormError }}</span>
+        }
+        <rux-button icon="add-large" (click)="addTerminal()">Add terminal</rux-button>
+      </div>
+    </rux-card>
+
+    <rux-card>
+      <div slot="header">Simulation Speed</div>
+      <div class="speed-buttons">
+        @for (speed of speedOptions; track speed) {
+          <rux-button
+            size="small"
+            [attr.secondary]="timeConfig.multiplier === speed ? null : ''"
+            (click)="setSpeed(speed)"
+          >
+            {{ speed }}x
+          </rux-button>
+        }
+      </div>
+    </rux-card>
+  </aside>
+
+  <section class="globe-host">
+    <cesium-globe
+      [satellites]="satellites"
+      [terminals]="terminals"
+      [timeConfig]="timeConfig"
+      (initError)="onInitError($event)"
+    />
+  </section>
+</main>

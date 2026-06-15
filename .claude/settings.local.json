@@ -1,0 +1,23 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(npm view *)",
+      "Bash(npm install *)",
+      "Bash(node -e ' *)",
+      "Bash(npm run *)",
+      "Bash(npx jest *)",
+      "Bash(node -e \"console.log\\(JSON.stringify\\(require\\('jest-preset-angular/jest-preset'\\).transformIgnorePatterns\\)\\)\")",
+      "Bash(node -e \"const p=require\\('./dist/cesium-wrapper/package.json'\\); console.log\\(JSON.stringify\\({name:p.name, module:p.module, types:p.typings||p.types, exports:Object.keys\\(p.exports||{}\\), peerDeps:p.peerDependencies, deps:p.dependencies, sideEffects:p.sideEffects}, null, 1\\)\\)\")",
+      "Bash(npx tsc *)",
+      "Bash(echo \"tsc exit: $?\")",
+      "Bash(npm audit *)",
+      "Bash(npx -y @angular/cli@19 new demo-app --standalone --style=css --routing=false --skip-git --skip-tests --ssr=false --defaults --skip-install)",
+      "Bash(npm ls *)",
+      "Bash(npx ng *)",
+      "Bash(curl -s -o /dev/null -w \"index: %{http_code}\\\\n\" http://localhost:4317/)",
+      "Bash(curl -s -o /dev/null -w \"wrapper glb: %{http_code}\\\\n\" http://localhost:4317/assets/cesium-wrapper/default-satellite.glb)",
+      "Bash(curl -s -o /dev/null -w \"cesium workers: %{http_code}\\\\n\" http://localhost:4317/cesium/Workers/transferTypedArrayTest.js)",
+      "Bash(curl -s http://localhost:4317/)"
+    ]
+  }
+}
