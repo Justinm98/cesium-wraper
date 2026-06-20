@@ -1,6 +1,7 @@
 import { CUSTOM_ELEMENTS_SCHEMA, Component } from '@angular/core';
 import {
   CesiumGlobeComponent,
+  GlobeConfig,
   SatelliteConfig,
   TerminalConfig,
 } from '@enterprise/cesium-wrapper';
@@ -95,6 +96,8 @@ export class AppComponent {
   satellites: SatelliteConfig[] = this.trackedSatellites();
   terminals: TerminalConfig[] = [...INITIAL_TERMINALS];
   timeConfig = { mode: 'realtime' as const, multiplier: 1 };
+  /** Cloud-free satellite imagery instead of the OSM street map default. */
+  globeConfig: GlobeConfig = { tileProvider: { type: 'satellite' } };
 
   /** Form state for the "add ground terminal" panel. */
   newTerminalName = '';

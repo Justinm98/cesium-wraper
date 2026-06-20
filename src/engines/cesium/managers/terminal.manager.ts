@@ -8,7 +8,18 @@ import { ModelLoader } from '../services/model-loader.service';
 const ID_PREFIX = 'terminal:';
 
 /** Pixel floor so terminals remain visible when the camera is zoomed out. */
-const MIN_PIXEL_SIZE = 24;
+const DEFAULT_MIN_PIXEL_SIZE = 1_000;
+
+/**
+ * Maximum scale for minimumPixelSize enforcement. Matches the satellite
+ * default so terminals remain visible at continental zoom (~5 000 km camera
+ * altitude → ~35 px) and scale proportionally as the camera descends.
+ *
+ * Transition distance (constant-pixel zone begins) ≈
+ *   DEFAULT_MAX_SCALE × model_width_m × (viewport_px / FOV_rad) / DEFAULT_MIN_PIXEL_SIZE
+ * ≈ 20 000 × 1.8 m × 979 / 1 000 ≈ 35 000 m ≈ 35 km from the terminal.
+ */
+const DEFAULT_MAX_SCALE = 20_000;
 
 /**
  * Owns the lifecycle of ground terminal entities: fixed geodetic positions
@@ -75,7 +86,8 @@ export class TerminalManager {
       position: Cartesian3.fromDegrees(longitude, latitude, altitude),
       model: {
         uri: this.modelLoader.resolveUri(config.model, 'terminal'),
-        minimumPixelSize: MIN_PIXEL_SIZE,
+        minimumPixelSize: config.scale?.minimumPixelSize ?? DEFAULT_MIN_PIXEL_SIZE,
+        maximumScale: config.scale?.maximumScale ?? DEFAULT_MAX_SCALE,
       },
       ...(config.label !== undefined ? { label: { text: config.label } } : {}),
     };

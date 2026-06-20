@@ -61,6 +61,19 @@ describe('CesiumRenderingEngine', () => {
       expect(widget().clock.clockStep).toBe(ClockStep.SYSTEM_CLOCK_MULTIPLIER);
     });
 
+    it('uses the bundled Sentinel-2 satellite imagery when configured', async () => {
+      await engine.initialize(container, { tileProvider: { type: 'satellite' } });
+
+      const provider = widget().options.baseLayer!.provider;
+      expect(provider).toBeInstanceOf(UrlTemplateImageryProvider);
+      const { options } = provider as unknown as {
+        options: { url: string; credit: string };
+      };
+      expect(options.url).toContain('s2cloudless');
+      // CC BY 4.0 requires the attribution to travel with the imagery.
+      expect(options.credit).toMatch(/EOX/);
+    });
+
     it('uses a custom tile provider when configured', async () => {
       await engine.initialize(container, {
         tileProvider: { type: 'custom', url: 'https://tiles.example.com/{z}/{x}/{y}.png' },

@@ -22,7 +22,7 @@ interface MockEntity {
     callback: (time: JulianDate) => { x: number; y: number; z: number } | undefined;
     isConstant: boolean;
   };
-  model: { uri: string; minimumPixelSize: number };
+  model: { uri: string; minimumPixelSize: number; maximumScale: number };
   label?: { text: string };
 }
 
@@ -48,6 +48,30 @@ describe('SatelliteManager', () => {
     expect(entity).toBeDefined();
     expect(entity.model.uri).toBe('assets/cesium-wrapper/default-satellite.glb');
     expect(manager.count).toBe(1);
+  });
+
+  it('applies default scale limits so models respond to zoom', () => {
+    manager.add(config());
+
+    const entity = entities.getById('satellite:iss') as unknown as MockEntity;
+    expect(entity.model.minimumPixelSize).toBe(1_000);
+    expect(entity.model.maximumScale).toBe(20_000);
+  });
+
+  it('honours a developer-supplied scale config', () => {
+    manager.add(config({ scale: { minimumPixelSize: 8, maximumScale: 5_000 } }));
+
+    const entity = entities.getById('satellite:iss') as unknown as MockEntity;
+    expect(entity.model.minimumPixelSize).toBe(8);
+    expect(entity.model.maximumScale).toBe(5_000);
+  });
+
+  it('allows partial scale config — unset fields fall back to defaults', () => {
+    manager.add(config({ scale: { minimumPixelSize: 64 } }));
+
+    const entity = entities.getById('satellite:iss') as unknown as MockEntity;
+    expect(entity.model.minimumPixelSize).toBe(64);
+    expect(entity.model.maximumScale).toBe(20_000); // falls back to DEFAULT_MAX_SCALE
   });
 
   it('uses a developer-supplied model when given', () => {
