@@ -24,6 +24,32 @@ const DEFAULT_MAX_SATELLITES = 100;
 const DEFAULT_MAX_TERMINALS = 5000;
 const DEFAULT_ASSET_BASE_URL = 'assets/cesium-wrapper';
 
+/**
+ * EOX Sentinel-2 cloudless mosaic, served as Web Mercator XYZ tiles. This is
+ * the imagery behind {@link TileProviderConfig.type} `'satellite'`.
+ *
+ * The `_3857` layer is the Web Mercator variant (matrix set `g`), which
+ * matches Cesium's default WebMercatorTilingScheme for UrlTemplateImageryProvider.
+ */
+const SENTINEL2_URL =
+  'https://tiles.maps.eox.at/wmts/1.0.0/s2cloudless-2020_3857/default/g/{z}/{y}/{x}.jpg';
+
+/**
+ * CC BY 4.0 attribution for the Sentinel-2 cloudless mosaic. The licence
+ * requires this credit to be shown; passing it to the provider renders it in
+ * Cesium's on-screen credit display so consumers are compliant by default.
+ */
+const SENTINEL2_CREDIT =
+  'Sentinel-2 cloudless 2020 by EOX IT Services GmbH — ' +
+  'contains modified Copernicus Sentinel data 2020 (CC BY 4.0)';
+
+/**
+ * Deepest zoom level EOX serves for this layer. Capping here means a closer
+ * zoom re-uses (upsamples) the level-16 tile instead of requesting tiles that
+ * do not exist and rendering blank — blurry beats missing.
+ */
+const SENTINEL2_MAX_LEVEL = 16;
+
 /** Thrown by every scene method when initialize() has not completed. */
 const NOT_INITIALIZED =
   'CesiumRenderingEngine is not initialized; call initialize(container, config) first.';
@@ -153,9 +179,20 @@ export class CesiumRenderingEngine implements RenderingEngine {
     config: GlobeConfig
   ): OpenStreetMapImageryProvider | UrlTemplateImageryProvider {
     const provider = config.tileProvider;
+    // OSM remains the zero-config default (free, no key, street map).
     if (provider === undefined || provider.type === 'osm') {
       return new OpenStreetMapImageryProvider({});
     }
+    if (provider.type === 'satellite') {
+      // Bundled cloud-free satellite imagery. CC BY 4.0, so the credit must
+      // travel with it (see SENTINEL2_CREDIT) to keep consumers compliant.
+      return new UrlTemplateImageryProvider({
+        url: SENTINEL2_URL,
+        credit: SENTINEL2_CREDIT,
+        maximumLevel: SENTINEL2_MAX_LEVEL,
+      });
+    }
+    // type === 'custom'
     if (provider.url === undefined) {
       throw new Error("TileProviderConfig.url is required when type is 'custom'.");
     }

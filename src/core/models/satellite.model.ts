@@ -1,5 +1,5 @@
 import { BeamDefinition } from './beam.model';
-import { ModelAsset, TooltipConfig } from './model-asset.model';
+import { ModelAsset, ModelScaleConfig, TooltipConfig } from './model-asset.model';
 
 /**
  * A NORAD Two-Line Element set describing an orbit. TLE is the industry
@@ -21,6 +21,8 @@ export interface SatelliteConfig {
   tle: TleData;
   /** Custom 3D model. Falls back to the bundled default satellite model. */
   model?: ModelAsset;
+  /** Controls how the model's apparent size responds to camera distance. */
+  scale?: ModelScaleConfig;
   /** Human-readable label rendered next to the model. */
   label?: string;
   /** Antenna beams projected from this satellite (post-v1 rendering). */

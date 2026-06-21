@@ -4,10 +4,23 @@ import { AuthTokenProvider } from '../interfaces/auth-token-provider.interface';
  * Base map imagery source. Defaults to OpenStreetMap so the library works
  * with zero accounts or API keys; Cesium Ion is strictly opt-in (see
  * docs/requirements.md 4.4 — the default stack must be free to distribute).
+ *
+ * Provider types:
+ * - `osm` — OpenStreetMap street map (roads and labels). The default.
+ * - `satellite` — Cloud-free global satellite imagery (no roads or labels),
+ *   backed by EOX's Sentinel-2 cloudless mosaic. Licensed CC BY 4.0, so it
+ *   is free to use and redistribute provided attribution is shown; the
+ *   library attaches the required credit automatically. No account or API
+ *   key is needed, which keeps it usable in the free, distributable default
+ *   stack (unlike the commercial Esri/Bing aerials, which are not).
+ * - `custom` — Any WMTS/XYZ tile URL the developer supplies.
  */
 export interface TileProviderConfig {
-  /** `osm` for the free OpenStreetMap provider, `custom` for a WMTS/XYZ URL. */
-  type: 'osm' | 'custom';
+  /**
+   * `osm` for the free OpenStreetMap street map, `satellite` for the bundled
+   * Sentinel-2 cloudless satellite imagery, or `custom` for a WMTS/XYZ URL.
+   */
+  type: 'osm' | 'satellite' | 'custom';
   /** Tile URL template. Required when {@link TileProviderConfig.type} is `custom`. */
   url?: string;
 }

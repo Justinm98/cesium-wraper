@@ -17,7 +17,36 @@
       "Bash(curl -s -o /dev/null -w \"index: %{http_code}\\\\n\" http://localhost:4317/)",
       "Bash(curl -s -o /dev/null -w \"wrapper glb: %{http_code}\\\\n\" http://localhost:4317/assets/cesium-wrapper/default-satellite.glb)",
       "Bash(curl -s -o /dev/null -w \"cesium workers: %{http_code}\\\\n\" http://localhost:4317/cesium/Workers/transferTypedArrayTest.js)",
-      "Bash(curl -s http://localhost:4317/)"
+      "Bash(curl -s http://localhost:4317/)",
+      "Bash(file /home/justin/Projects/cesium-wraper/src/engines/cesium/assets/*.glb)",
+      "Bash(node scripts/generate-default-models.mjs)",
+      "Bash(npm test *)",
+      "Bash(npm start *)",
+      "Bash(echo \"Server PID: $!\")",
+      "Bash(npx playwright *)",
+      "Read(//home/justin/.npm-global/lib/node_modules/**)",
+      "Read(//usr/**)",
+      "Bash(npm root *)",
+      "Read(//home/justin/**)",
+      "Read(//tmp/**)",
+      "Bash(node --input-type=module)",
+      "Bash(node /tmp/verify-zoom.mjs)",
+      "Bash(pkill -f \"ng serve\")",
+      "Bash(pkill -f \"node.*ng\")",
+      "Bash(fuser -k 4201/tcp)",
+      "Bash(node /tmp/verify-scale-progression.mjs)",
+      "Bash(curl -s -o /tmp/s2-tile-test.jpg -w 'HTTP %{http_code} | %{content_type} | %{size_download} bytes\\\\n' https://tiles.maps.eox.at/wmts/1.0.0/s2cloudless-2020_3857/default/g/4/5/8.jpg)",
+      "Bash(break)",
+      "Bash(grep -q \"localhost:4205\" /tmp/claude-1000/-home-justin-Projects-cesium-wraper/b3dc876a-d7b8-4148-be53-25db5587cceb/tasks/bzkehcmwd.output)",
+      "Bash(grep -q \"\\\\[ERROR\\\\]\" /tmp/claude-1000/-home-justin-Projects-cesium-wraper/b3dc876a-d7b8-4148-be53-25db5587cceb/tasks/bzkehcmwd.output)",
+      "Bash(sed -i 's/localhost:4205/localhost:4206/g' /tmp/verify-satellite.mjs)",
+      "Bash(node /tmp/verify-satellite.mjs)",
+      "Bash(sed -i 's/localhost:4205/localhost:4206/g' /tmp/verify-debug.mjs)",
+      "Bash(node /tmp/verify-debug.mjs)",
+      "Bash(sed -i 's/localhost:420[0-9]/localhost:4208/g' /tmp/verify-satellite.mjs *)"
+    ],
+    "additionalDirectories": [
+      "/tmp"
     ]
   }
 }

@@ -7,7 +7,7 @@ import { TerminalManager } from './terminal.manager';
 interface MockEntity {
   id: string;
   position: Cartesian3;
-  model: { uri: string; minimumPixelSize: number };
+  model: { uri: string; minimumPixelSize: number; maximumScale: number };
   label?: { text: string };
 }
 
@@ -33,6 +33,30 @@ describe('TerminalManager', () => {
     expect(entity).toBeDefined();
     expect(entity.model.uri).toBe('assets/cesium-wrapper/default-terminal.glb');
     expect(manager.count).toBe(1);
+  });
+
+  it('applies default scale limits so models respond to zoom', () => {
+    manager.add(config());
+
+    const entity = entities.getById('terminal:t1') as unknown as MockEntity;
+    expect(entity.model.minimumPixelSize).toBe(1_000);
+    expect(entity.model.maximumScale).toBe(20_000);
+  });
+
+  it('honours a developer-supplied scale config', () => {
+    manager.add(config({ scale: { minimumPixelSize: 12, maximumScale: 500 } }));
+
+    const entity = entities.getById('terminal:t1') as unknown as MockEntity;
+    expect(entity.model.minimumPixelSize).toBe(12);
+    expect(entity.model.maximumScale).toBe(500);
+  });
+
+  it('allows partial scale config — unset fields fall back to defaults', () => {
+    manager.add(config({ scale: { maximumScale: 4_000 } }));
+
+    const entity = entities.getById('terminal:t1') as unknown as MockEntity;
+    expect(entity.model.minimumPixelSize).toBe(1_000); // falls back to DEFAULT_MIN_PIXEL_SIZE
+    expect(entity.model.maximumScale).toBe(4_000);
   });
 
   it('positions the terminal from lat/lon/alt with Cesium argument order (lon, lat, alt)', () => {

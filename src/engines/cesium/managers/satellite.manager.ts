@@ -21,7 +21,20 @@ const ID_PREFIX = 'satellite:';
  * Pixel floor for satellite models. At orbital distances a meter-scale
  * model is sub-pixel; without a floor satellites would be invisible.
  */
-const MIN_PIXEL_SIZE = 32;
+const DEFAULT_MIN_PIXEL_SIZE = 1_000;
+
+/**
+ * Maximum scale multiplier for minimumPixelSize enforcement. Without this,
+ * Cesium scales the model to maintain the pixel floor at every distance,
+ * making the model appear the same size regardless of zoom. With this cap,
+ * the model shrinks naturally beyond ~100 km from the satellite and grows
+ * as the camera approaches — giving users proportional zoom feedback.
+ *
+ * Transition distance (where constant-pixel zone begins) ≈
+ *   DEFAULT_MAX_SCALE × model_width_m × (viewport_px / FOV_rad) / DEFAULT_MIN_PIXEL_SIZE
+ * ≈ 20 000 × 5 m × 979 / 1 000 ≈ 98 000 m ≈ 98 km from the satellite.
+ */
+const DEFAULT_MAX_SCALE = 20_000;
 
 /**
  * Owns the lifecycle of satellite entities: TLE validation, position
@@ -96,7 +109,8 @@ export class SatelliteManager {
       position: new CallbackPositionProperty(positionCallback, false),
       model: {
         uri: this.modelLoader.resolveUri(config.model, 'satellite'),
-        minimumPixelSize: MIN_PIXEL_SIZE,
+        minimumPixelSize: config.scale?.minimumPixelSize ?? DEFAULT_MIN_PIXEL_SIZE,
+        maximumScale: config.scale?.maximumScale ?? DEFAULT_MAX_SCALE,
       },
       ...(config.label !== undefined ? { label: { text: config.label } } : {}),
     };
