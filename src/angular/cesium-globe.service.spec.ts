@@ -66,6 +66,19 @@ describe('CesiumGlobeService', () => {
     expect(engine.setLinkLinesVisible).toHaveBeenCalledWith(false);
   });
 
+  it('delegates the v2 coverage computation and assignment methods', () => {
+    const assignment = {
+      assignments: [{ terminalId: 't1', links: [{ satelliteId: 's1' }] }],
+    };
+    service.setCoverageComputationEnabled(true);
+    service.setCoverageAssignment(assignment);
+    service.clearCoverageAssignment();
+
+    expect(engine.setCoverageComputationEnabled).toHaveBeenCalledWith(true);
+    expect(engine.setCoverageAssignment).toHaveBeenCalledWith(assignment);
+    expect(engine.clearCoverageAssignment).toHaveBeenCalled();
+  });
+
   it('exposes the engine event streams', () => {
     const click = jest.fn();
     service.entityClick$.subscribe(click);

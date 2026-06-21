@@ -15,6 +15,7 @@ import {
 import { Subscription } from 'rxjs';
 
 import { CoverageConfig } from '../core/models/coverage.model';
+import { CoverageAssignment } from '../core/models/coverage-assignment.model';
 import { CustomEntityConfig } from '../core/models/custom-entity.model';
 import { EntityEvent, TerminalPlacedEvent } from '../core/models/events.model';
 import { GlobeConfig } from '../core/models/globe-config.model';
@@ -56,6 +57,15 @@ export class CesiumGlobeComponent implements OnInit, OnChanges, OnDestroy {
   @Input() customEntities: readonly CustomEntityConfig[] = [];
   @Input() timeConfig?: TimeConfig;
   @Input() coverageConfig?: CoverageConfig;
+  /** Enables coverage computation (terminal recolor + link lines). Default OFF (FR-A-09a). */
+  @Input() coverageComputationEnabled = false;
+  /**
+   * External terminal→beam coverage assignments overriding computation
+   * (FR-A-12a). Applied only while {@link coverageComputationEnabled} is `true`
+   * (M3, review-v2 — user decision): with computation off the assignment is
+   * stored but inert (nothing colored or linked). Unknown ids are ignored (L5).
+   */
+  @Input() coverageAssignment?: CoverageAssignment;
   /** Per-instance globe configuration; overrides the provideGlobe() default. */
   @Input() globeConfig?: GlobeConfig;
 
@@ -122,6 +132,14 @@ export class CesiumGlobeComponent implements OnInit, OnChanges, OnDestroy {
     if (this.coverageConfig !== undefined) {
       this.engine.setCoverageConfig(this.coverageConfig);
     }
+    // Apply the external assignment before enabling computation so the first
+    // recompute already honours any override (FR-A-12a/12c).
+    if (this.coverageAssignment !== undefined) {
+      this.engine.setCoverageAssignment(this.coverageAssignment);
+    }
+    if (this.coverageComputationEnabled) {
+      this.engine.setCoverageComputationEnabled(true);
+    }
   }
 
   ngOnChanges(changes: SimpleChanges): void {
@@ -134,6 +152,17 @@ export class CesiumGlobeComponent implements OnInit, OnChanges, OnDestroy {
     }
     if ('coverageConfig' in changes && this.coverageConfig !== undefined) {
       this.engine.setCoverageConfig(this.coverageConfig);
+    }
+    if ('coverageAssignment' in changes) {
+      // Transition to undefined clears the assignment (FR-A-12d).
+      if (this.coverageAssignment !== undefined) {
+        this.engine.setCoverageAssignment(this.coverageAssignment);
+      } else {
+        this.engine.clearCoverageAssignment();
+      }
+    }
+    if ('coverageComputationEnabled' in changes) {
+      this.engine.setCoverageComputationEnabled(this.coverageComputationEnabled);
     }
   }
 

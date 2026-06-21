@@ -149,4 +149,33 @@ describe('TerminalManager', () => {
     expect(manager.count).toBe(0);
     expect(entities.values).toHaveLength(0);
   });
+
+  describe('coverage overlay (v2)', () => {
+    it('exposes terminal ids and earth-fixed positions for the calculator', () => {
+      manager.add(config({ id: 'a', position: { latitude: 10, longitude: 20, altitude: 5 } }));
+
+      expect(manager.ids).toEqual(['a']);
+      // The mock's fromDegrees stores (lon, lat, alt) as (x, y, z).
+      expect(manager.getPositionEcef('a')).toEqual({ x: 20, y: 10, z: 5 });
+      expect(manager.getPositionEcef('unknown')).toBeUndefined();
+    });
+
+    it('overlays a coverage color on the model and clears it back to default', () => {
+      manager.add(config({ id: 'a' }));
+
+      manager.setCoverageColor('a', { r: 0, g: 255, b: 0, a: 1 });
+      const entity = entities.getById('terminal:a') as unknown as {
+        model: { color?: { green: number; alpha: number } };
+      };
+      expect(entity.model.color!.green).toBeCloseTo(1, 5);
+      expect(entity.model.color!.alpha).toBeCloseTo(1, 5);
+
+      manager.setCoverageColor('a', undefined);
+      expect(entity.model.color).toBeUndefined();
+    });
+
+    it('setCoverageColor on an unknown terminal is a no-op', () => {
+      expect(() => manager.setCoverageColor('nope', { r: 1, g: 1, b: 1, a: 1 })).not.toThrow();
+    });
+  });
 });

@@ -2,6 +2,7 @@ import { Injectable, inject } from '@angular/core';
 import { Observable } from 'rxjs';
 
 import { CoverageConfig } from '../core/models/coverage.model';
+import { CoverageAssignment } from '../core/models/coverage-assignment.model';
 import { CustomEntityConfig } from '../core/models/custom-entity.model';
 import { EntityEvent, TerminalPlacedEvent } from '../core/models/events.model';
 import { SatelliteConfig } from '../core/models/satellite.model';
@@ -75,5 +76,27 @@ export class CesiumGlobeService {
 
   setLinkLinesVisible(visible: boolean): void {
     this.engine.setLinkLinesVisible(visible);
+  }
+
+  /** Enables or disables coverage computation at runtime (FR-A-09a/09b). */
+  setCoverageComputationEnabled(enabled: boolean): void {
+    this.engine.setCoverageComputationEnabled(enabled);
+  }
+
+  /**
+   * Supplies/replaces external coverage assignments (FR-A-12a).
+   *
+   * Applied only while coverage computation is ENABLED (M3, review-v2 — user
+   * decision): call {@link setCoverageComputationEnabled}(true) for the
+   * assignment to drive coloring/link lines; with computation off it is stored
+   * but inert. Unknown terminal/satellite/beam ids are silently ignored (L5).
+   */
+  setCoverageAssignment(assignment: CoverageAssignment): void {
+    this.engine.setCoverageAssignment(assignment);
+  }
+
+  /** Clears all external coverage assignments (FR-A-12d). */
+  clearCoverageAssignment(): void {
+    this.engine.clearCoverageAssignment();
   }
 }

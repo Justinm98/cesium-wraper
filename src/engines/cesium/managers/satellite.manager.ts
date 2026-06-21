@@ -43,6 +43,16 @@ const DEFAULT_MAX_SCALE = 20_000;
  */
 export class SatelliteManager {
   private readonly configs = new Map<string, SatelliteConfig>();
+  /**
+   * The live position callback per satellite, so beams and link lines can
+   * reuse the already-propagated position instead of re-propagating the TLE
+   * (one TLE evaluation feeds the model, its beams, and its link lines —
+   * architecture-v2 §3.1.B).
+   */
+  private readonly positionCallbacks = new Map<
+    string,
+    (time: JulianDate | undefined) => Cartesian3 | undefined
+  >();
 
   constructor(
     private readonly entities: EntityCollection,
@@ -84,6 +94,16 @@ export class SatelliteManager {
     }
     this.entities.removeById(ID_PREFIX + id);
     this.configs.delete(id);
+    this.positionCallbacks.delete(id);
+  }
+
+  /**
+   * The satellite's live ECEF position for `time` (or "now" when undefined),
+   * reusing the already-propagated callback — no re-propagation. Returns
+   * `undefined` for an unknown satellite or when propagation has no value.
+   */
+  getPosition(id: string, time: JulianDate | undefined): Cartesian3 | undefined {
+    return this.positionCallbacks.get(id)?.(time);
   }
 
   removeAll(): void {
@@ -103,6 +123,8 @@ export class SatelliteManager {
    */
   private buildEntityOptions(config: SatelliteConfig): object {
     const positionCallback = this.createPositionCallback(config.id, config.tle);
+    // Retain the callback so beams/link lines reuse this propagation.
+    this.positionCallbacks.set(config.id, positionCallback);
     return {
       id: ID_PREFIX + config.id,
       // isConstant=false: position changes every clock tick.

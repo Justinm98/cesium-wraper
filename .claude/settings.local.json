@@ -43,7 +43,10 @@
       "Bash(node /tmp/verify-satellite.mjs)",
       "Bash(sed -i 's/localhost:4205/localhost:4206/g' /tmp/verify-debug.mjs)",
       "Bash(node /tmp/verify-debug.mjs)",
-      "Bash(sed -i 's/localhost:420[0-9]/localhost:4208/g' /tmp/verify-satellite.mjs *)"
+      "Bash(sed -i 's/localhost:420[0-9]/localhost:4208/g' /tmp/verify-satellite.mjs *)",
+      "Bash(echo \"=== TSC DONE \\(exit $?\\) ===\")",
+      "Bash(echo \"=== BUILD exit $? ===\")",
+      "Bash(echo \"EXIT tsc:$?\")"
     ],
     "additionalDirectories": [
       "/tmp"

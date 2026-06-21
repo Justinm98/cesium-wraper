@@ -8,6 +8,7 @@ import {
 import { Observable, Subject } from 'rxjs';
 
 import { RenderingEngine } from '../../core/interfaces/rendering-engine.interface';
+import { CoverageAssignment } from '../../core/models/coverage-assignment.model';
 import { CoverageConfig } from '../../core/models/coverage.model';
 import { CustomEntityConfig } from '../../core/models/custom-entity.model';
 import { EntityEvent, TerminalPlacedEvent } from '../../core/models/events.model';
@@ -15,13 +16,17 @@ import { GlobeConfig } from '../../core/models/globe-config.model';
 import { SatelliteConfig } from '../../core/models/satellite.model';
 import { TerminalConfig } from '../../core/models/terminal.model';
 import { TimeConfig } from '../../core/models/time.model';
+import { BeamManager } from './managers/beam.manager';
+import { LinkLineManager } from './managers/link-line.manager';
 import { SatelliteManager } from './managers/satellite.manager';
 import { TerminalManager } from './managers/terminal.manager';
+import { CoverageCalculator, CoverageDeps } from './services/coverage-calculator';
 import { ModelLoader } from './services/model-loader.service';
 import { TimeController } from './services/time-controller';
 
 const DEFAULT_MAX_SATELLITES = 100;
 const DEFAULT_MAX_TERMINALS = 5000;
+const DEFAULT_MAX_BEAMS_PER_SATELLITE = 10;
 const DEFAULT_ASSET_BASE_URL = 'assets/cesium-wrapper';
 
 /**
@@ -67,7 +72,21 @@ export class CesiumRenderingEngine implements RenderingEngine {
   private widget: CesiumWidget | undefined;
   private satellites: SatelliteManager | undefined;
   private terminals: TerminalManager | undefined;
+  private beams: BeamManager | undefined;
+  private linkLines: LinkLineManager | undefined;
   private timeController: TimeController | undefined;
+
+  /**
+   * Coverage computation is opt-in (FR-A-09a). The calculator is constructed
+   * lazily on the first {@link setCoverageComputationEnabled}(true) so a
+   * beams-only consumer pays nothing at runtime (NFR-A-04). These fields hold
+   * the latest config/assignment/link-visibility so a later lazy construction
+   * starts in the correct state.
+   */
+  private coverage: CoverageCalculator | undefined;
+  private coverageConfig: CoverageConfig | undefined;
+  private coverageAssignment: CoverageAssignment = { assignments: [] };
+  private linkLinesVisibleOverride: boolean | undefined;
 
   // Interaction streams are part of the engine contract but only produce
   // values post-v1, when picking is implemented (docs/architecture.md §10).
@@ -106,6 +125,16 @@ export class CesiumRenderingEngine implements RenderingEngine {
       modelLoader,
       config.performance?.maxTerminals ?? DEFAULT_MAX_TERMINALS
     );
+    this.beams = new BeamManager(
+      this.widget.entities,
+      config.performance?.maxBeamsPerSatellite ?? DEFAULT_MAX_BEAMS_PER_SATELLITE,
+      (satId, time) => this.satellites?.getPosition(satId, time)
+    );
+    this.linkLines = new LinkLineManager(
+      this.widget.entities,
+      (satId, time) => this.satellites?.getPosition(satId, time),
+      (terminalId) => this.terminals?.getPositionEcef(terminalId)
+    );
     this.timeController = new TimeController(this.widget.clock);
     // Satellites must move out of the box; realtime is the v1 default.
     this.timeController.apply({ mode: 'realtime' });
@@ -115,25 +144,50 @@ export class CesiumRenderingEngine implements RenderingEngine {
     if (this.widget === undefined) {
       return; // Idempotent by contract.
     }
+    // M5 (review-v2): explicitly tear down the coverage tick listener BEFORE
+    // destroying the widget/clock, rather than relying on `widget.destroy()`
+    // implicitly disposing the clock's onTick event. `setEnabled(false)`
+    // removes the registered listener (and reverts recolors / clears link
+    // lines) so no per-tick `recompute()` can survive teardown.
+    this.coverage?.setEnabled(false);
     if (!this.widget.isDestroyed()) {
       this.widget.destroy();
     }
     this.widget = undefined;
     this.satellites = undefined;
     this.terminals = undefined;
+    this.beams = undefined;
+    this.linkLines = undefined;
     this.timeController = undefined;
+    // Drop coverage so a re-initialized engine starts disabled (FR-A-09a) and
+    // re-constructs the calculator lazily on next enable (NFR-A-04).
+    this.coverage = undefined;
+    // L7 (review-v2, closes review.md L4): complete the interaction subjects so
+    // any subscribers receive completion and do not leak past engine teardown.
+    this.entityClickSubject.complete();
+    this.entityHoverSubject.complete();
+    this.terminalPlacedSubject.complete();
   }
 
   addSatellite(config: SatelliteConfig): void {
+    // Add the satellite model first, then its beams (the beam position
+    // accessor reads the satellite's now-registered propagation callback).
     this.requireSatellites().add(config);
+    this.requireBeams().syncBeams(config.id, config.beams);
   }
 
   updateSatellite(id: string, patch: Partial<SatelliteConfig>): void {
     this.requireSatellites().update(id, patch);
+    // Re-sync beams only when the patch carried a `beams` key, so a model-only
+    // update does not churn beams (FR-A-06; architecture-v2 §3.1.D).
+    if ('beams' in patch) {
+      this.requireBeams().syncBeams(id, patch.beams);
+    }
   }
 
   removeSatellite(id: string): void {
     this.requireSatellites().remove(id);
+    this.requireBeams().removeSatellite(id);
   }
 
   addTerminal(config: TerminalConfig): void {
@@ -167,12 +221,42 @@ export class CesiumRenderingEngine implements RenderingEngine {
     this.timeController.apply(config);
   }
 
-  setCoverageConfig(_config: CoverageConfig): void {
-    throw new Error('Coverage visualization is not implemented in v1 (docs/architecture.md §10).');
+  setCoverageConfig(config: CoverageConfig): void {
+    this.requireInitialized();
+    this.coverageConfig = config;
+    // A new config re-establishes link-line visibility and clears any imperative
+    // override (FR-A-16), so drop the stored override.
+    this.linkLinesVisibleOverride = undefined;
+    this.requireLinkLines().setColor(config.linkLineColor);
+    this.coverage?.setConfig(config);
   }
 
-  setLinkLinesVisible(_visible: boolean): void {
-    throw new Error('Link lines are not implemented in v1 (docs/architecture.md §10).');
+  setLinkLinesVisible(visible: boolean): void {
+    this.requireInitialized();
+    this.linkLinesVisibleOverride = visible;
+    this.coverage?.setLinkLinesVisible(visible);
+  }
+
+  setCoverageComputationEnabled(enabled: boolean): void {
+    this.requireInitialized();
+    if (enabled) {
+      // Lazy construction on first enable (NFR-A-04): a beams-only consumer
+      // never instantiates the calculator nor registers its tick listener.
+      this.ensureCoverage().setEnabled(true);
+    } else {
+      // If never constructed, disabled is already the state — nothing to do.
+      this.coverage?.setEnabled(false);
+    }
+  }
+
+  setCoverageAssignment(assignment: CoverageAssignment): void {
+    this.requireInitialized();
+    this.coverageAssignment = assignment;
+    this.coverage?.setAssignment(assignment);
+  }
+
+  clearCoverageAssignment(): void {
+    this.setCoverageAssignment({ assignments: [] });
   }
 
   private createImageryProvider(
@@ -211,5 +295,65 @@ export class CesiumRenderingEngine implements RenderingEngine {
       throw new Error(NOT_INITIALIZED);
     }
     return this.terminals;
+  }
+
+  private requireBeams(): BeamManager {
+    if (this.beams === undefined) {
+      throw new Error(NOT_INITIALIZED);
+    }
+    return this.beams;
+  }
+
+  private requireLinkLines(): LinkLineManager {
+    if (this.linkLines === undefined) {
+      throw new Error(NOT_INITIALIZED);
+    }
+    return this.linkLines;
+  }
+
+  private requireInitialized(): void {
+    if (this.widget === undefined) {
+      throw new Error(NOT_INITIALIZED);
+    }
+  }
+
+  /**
+   * Constructs the {@link CoverageCalculator} on first use and restores the
+   * latest config/assignment/link-visibility into it, so enabling coverage
+   * after config was already set behaves identically to setting it after.
+   */
+  private ensureCoverage(): CoverageCalculator {
+    if (this.coverage !== undefined) {
+      return this.coverage;
+    }
+    if (this.widget === undefined) {
+      throw new Error(NOT_INITIALIZED);
+    }
+    const beams = this.requireBeams();
+    const terminals = this.requireTerminals();
+    const satellites = this.requireSatellites();
+    const linkLines = this.requireLinkLines();
+    const deps: CoverageDeps = {
+      satelliteIds: () => beams.satelliteIds,
+      beamsFor: (id) => beams.getBeams(id),
+      satellitePosition: (id, time) => satellites.getPosition(id, time),
+      terminalIds: () => terminals.ids,
+      terminalPosition: (id) => terminals.getPositionEcef(id),
+      setTerminalColor: (id, color) => terminals.setCoverageColor(id, color),
+      syncLinkLines: (pairs) => linkLines.sync(pairs),
+      clearLinkLines: () => linkLines.clear(),
+      setLinkLineColor: (color) => linkLines.setColor(color),
+    };
+    const calculator = new CoverageCalculator(this.widget.clock, deps);
+    // Restore the latest state captured before lazy construction.
+    if (this.coverageConfig !== undefined) {
+      calculator.setConfig(this.coverageConfig);
+    }
+    calculator.setAssignment(this.coverageAssignment);
+    if (this.linkLinesVisibleOverride !== undefined) {
+      calculator.setLinkLinesVisible(this.linkLinesVisibleOverride);
+    }
+    this.coverage = calculator;
+    return calculator;
   }
 }

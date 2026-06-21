@@ -1,8 +1,38 @@
 # Architecture: Cesium Wrapper Library
 
-**Status:** Approved  
+**Status:** Approved (v1 baseline)  
 **Date:** 2026-06-11  
 **Author:** Architect Agent
+
+> **⚠️ v2 amendments (Epic A — Beams & Coverage, approved 2026-06-20).**
+> This document is the **v1 baseline**. For the v2 Beams & Coverage release, the
+> authoritative design is **[architecture-v2.md](architecture-v2.md)**, which
+> amends the sections below. Apply these deltas when reading this doc in a v2
+> context:
+> - **§3 Module structure** — adds `core/models/coverage-assignment.model.ts`,
+>   `engines/cesium/managers/beam.manager.ts`, `.../managers/link-line.manager.ts`,
+>   `.../services/coverage-calculator.ts`.
+> - **§4.2 `BeamDefinition`** — flat `halfAngle` is **removed**; a **required**
+>   `geometry: BeamGeometry` discriminated union (`circular` | `elliptical`,
+>   extensible) replaces it.
+> - **§4 Domain model** — adds `CoverageAssignment` / `TerminalCoverageAssignment`
+>   / `CoverageLink`. `CoverageConfig` unchanged.
+> - **§5.1 `RenderingEngine`** — adds `setCoverageComputationEnabled`,
+>   `setCoverageAssignment`, `clearCoverageAssignment`; the
+>   `setCoverageConfig` / `setLinkLinesVisible` stubs become real.
+> - **§6 Angular layer** — component gains `@Input() coverageComputationEnabled`
+>   and `@Input() coverageAssignment`; service mirrors the three new methods.
+> - **§7 Engine internals** — **correction:** `BeamManager` renders beams
+>   **independently of coverage** and does **not** trigger `CoverageCalculator`
+>   (the v1 sketch coupled them). Adds `LinkLineManager`; refines
+>   `CoverageCalculator` (3D-cone + Earth-occlusion test, per-tick recompute,
+>   external-override branch, lazy construction).
+> - **§8 Extension points** — beam geometry is extensible via new `BeamGeometry`
+>   union members; external coverage assignment is a new consumer input.
+> - **§9 Decisions** — see architecture-v2.md §6 (Decisions A–E).
+>
+> §10 (v1 scope boundary) is historical and unchanged; v2 scope lives in
+> [requirements-v2.md](requirements-v2.md).
 
 ---
 
