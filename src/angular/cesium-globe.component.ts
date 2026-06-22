@@ -66,6 +66,12 @@ export class CesiumGlobeComponent implements OnInit, OnChanges, OnDestroy {
    * stored but inert (nothing colored or linked). Unknown ids are ignored (L5).
    */
   @Input() coverageAssignment?: CoverageAssignment;
+  /**
+   * Shows the translucent solid beam volumes (FR-A-01d). Default OFF — beams
+   * show only their footprint outline until this is enabled. A per-beam
+   * `showVolume` on a `BeamDefinition` overrides this for individual beams.
+   */
+  @Input() showBeamVolumes = false;
   /** Per-instance globe configuration; overrides the provideGlobe() default. */
   @Input() globeConfig?: GlobeConfig;
 
@@ -140,6 +146,9 @@ export class CesiumGlobeComponent implements OnInit, OnChanges, OnDestroy {
     if (this.coverageComputationEnabled) {
       this.engine.setCoverageComputationEnabled(true);
     }
+    if (this.showBeamVolumes) {
+      this.engine.setBeamVolumesVisible(true);
+    }
   }
 
   ngOnChanges(changes: SimpleChanges): void {
@@ -163,6 +172,9 @@ export class CesiumGlobeComponent implements OnInit, OnChanges, OnDestroy {
     }
     if ('coverageComputationEnabled' in changes) {
       this.engine.setCoverageComputationEnabled(this.coverageComputationEnabled);
+    }
+    if ('showBeamVolumes' in changes) {
+      this.engine.setBeamVolumesVisible(this.showBeamVolumes);
     }
   }
 

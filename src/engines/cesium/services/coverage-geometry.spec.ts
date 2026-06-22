@@ -1,7 +1,9 @@
 import { BeamGeometry } from '../../../core/models/beam.model';
 import {
+  BoresightFrame,
   computeBoresightFrame,
   computeBoresightOffsets,
+  computeConeModelMatrix,
   hasLineOfSight,
   isInsideBeam,
   Vec3,
@@ -23,6 +25,51 @@ const elliptical = (azimuthHalfAngle: number, elevationHalfAngle: number): BeamG
 });
 
 describe('coverage-geometry', () => {
+  describe('computeConeModelMatrix', () => {
+    // A simple right-handed frame (azimuthAxis × elevationAxis = boresight).
+    const frame: BoresightFrame = {
+      azimuthAxis: { x: 1, y: 0, z: 0 },
+      elevationAxis: { x: 0, y: 1, z: 0 },
+      boresight: { x: 0, y: 0, z: 1 },
+    };
+    const sat: Vec3 = { x: 0, y: 0, z: 1000 };
+
+    // Apply a column-major 4x4 to a local point (x, y, z, 1).
+    const apply = (m: number[], x: number, y: number, z: number): Vec3 => ({
+      x: m[0] * x + m[4] * y + m[8] * z + m[12],
+      y: m[1] * x + m[5] * y + m[9] * z + m[13],
+      z: m[2] * x + m[6] * y + m[10] * z + m[14],
+    });
+
+    it('places the unit-cone apex (local z = -0.5) at the satellite', () => {
+      const m = computeConeModelMatrix(sat, frame, 2, 3, 10);
+      const apex = apply(m, 0, 0, -0.5);
+      expect(apex.x).toBeCloseTo(0, 6);
+      expect(apex.y).toBeCloseTo(0, 6);
+      expect(apex.z).toBeCloseTo(1000, 6);
+    });
+
+    it('opens the cone along the boresight: base center at sat + boresight*length', () => {
+      const m = computeConeModelMatrix(sat, frame, 2, 3, 10);
+      const base = apply(m, 0, 0, 0.5);
+      expect(base.z).toBeCloseTo(1010, 6); // 1000 + 10 along +z boresight
+    });
+
+    it('scales the base into an ellipse: azimuthRadius on x, elevationRadius on y', () => {
+      const m = computeConeModelMatrix(sat, frame, 2, 3, 10);
+      const rimX = apply(m, 1, 0, 0.5);
+      const rimY = apply(m, 0, 1, 0.5);
+      expect(rimX.x).toBeCloseTo(2, 6); // azimuthRadius
+      expect(rimY.y).toBeCloseTo(3, 6); // elevationRadius (distinct ⇒ elliptical)
+    });
+
+    it('collapses to a circular base when the radii are equal', () => {
+      const m = computeConeModelMatrix(sat, frame, 5, 5, 10);
+      expect(apply(m, 1, 0, 0.5).x).toBeCloseTo(5, 6);
+      expect(apply(m, 0, 1, 0.5).y).toBeCloseTo(5, 6);
+    });
+  });
+
   describe('computeBoresightOffsets', () => {
     it('reports zero off-axis angle for a terminal on the boresight', () => {
       // Terminal directly below the satellite on the surface.

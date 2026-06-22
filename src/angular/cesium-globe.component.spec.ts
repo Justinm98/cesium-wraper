@@ -249,6 +249,13 @@ describe('CesiumGlobeComponent', () => {
       fixture.detectChanges();
       expect(engine.clearCoverageAssignment).toHaveBeenCalled();
     });
+
+    it('forwards showBeamVolumes changes (FR-A-01d)', () => {
+      fixture.componentRef.setInput('showBeamVolumes', true);
+      fixture.detectChanges();
+
+      expect(engine.setBeamVolumesVisible).toHaveBeenCalledWith(true);
+    });
   });
 
   describe('coverage inputs applied at init', () => {
@@ -272,6 +279,19 @@ describe('CesiumGlobeComponent', () => {
       configure();
       await init();
       expect(engine.setCoverageComputationEnabled).not.toHaveBeenCalled();
+    });
+
+    it('applies showBeamVolumes when bound true before ready (FR-A-01d)', async () => {
+      configure();
+      fixture.componentRef.setInput('showBeamVolumes', true);
+      await init();
+      expect(engine.setBeamVolumesVisible).toHaveBeenCalledWith(true);
+    });
+
+    it('leaves beam volumes off by default (FR-A-01d)', async () => {
+      configure();
+      await init();
+      expect(engine.setBeamVolumesVisible).not.toHaveBeenCalled();
     });
   });
 

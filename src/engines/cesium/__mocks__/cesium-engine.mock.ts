@@ -160,30 +160,115 @@ export const ClockStep = {
 } as const;
 
 /**
- * Stand-in for Cesium's Event. Tests drive the per-tick coverage recompute by
- * calling `raise(clock)` to simulate a clock tick (FR-A-19).
+ * Stand-in for Cesium's Event. Generic over its listener arguments so it serves
+ * both `clock.onTick` (raised with the clock, for the coverage recompute, FR-A-19)
+ * and `scene.preRender` (raised with `(scene, time)`, for the per-frame beam
+ * volume modelMatrix update, FR-A-05). Tests call `raise(...)` to simulate a tick.
  */
-export class CesiumEvent {
-  private readonly listeners = new Set<(clock: Clock) => void>();
+export class CesiumEvent<A extends unknown[] = [Clock]> {
+  private readonly listeners = new Set<(...args: A) => void>();
 
-  addEventListener(listener: (clock: Clock) => void): () => void {
+  addEventListener(listener: (...args: A) => void): () => void {
     this.listeners.add(listener);
     return () => this.removeEventListener(listener);
   }
 
-  removeEventListener(listener: (clock: Clock) => void): void {
+  removeEventListener(listener: (...args: A) => void): void {
     this.listeners.delete(listener);
   }
 
-  raise(clock: Clock): void {
+  raise(...args: A): void {
     for (const listener of [...this.listeners]) {
-      listener(clock);
+      listener(...args);
     }
   }
 
   get listenerCount(): number {
     return this.listeners.size;
   }
+}
+
+/** 4x4 matrix stand-in carrying its column-major values for assertions. */
+export class Matrix4 {
+  constructor(public readonly values: number[] = []) {}
+
+  static fromColumnMajorArray(values: number[]): Matrix4 {
+    return new Matrix4([...values]);
+  }
+}
+
+/** Procedural cone geometry options bag (length/topRadius/bottomRadius). */
+export class CylinderGeometry {
+  constructor(public readonly options: Record<string, unknown>) {}
+}
+
+/** Per-instance color attribute; carries the Color so tests can assert fill. */
+export class ColorGeometryInstanceAttribute {
+  constructor(public readonly color: Color) {}
+
+  static fromColor(color: Color): ColorGeometryInstanceAttribute {
+    return new ColorGeometryInstanceAttribute(color);
+  }
+}
+
+/** Geometry + per-instance attributes bag. */
+export class GeometryInstance {
+  constructor(public readonly options: Record<string, unknown>) {}
+}
+
+/** Translucent per-instance-color appearance options bag. */
+export class PerInstanceColorAppearance {
+  constructor(public readonly options: Record<string, unknown>) {}
+}
+
+/**
+ * Scene primitive stand-in. `modelMatrix` and `show` are mutable because the
+ * beam volume is re-pointed every frame (FR-A-05 / FR-A-01d) by BeamManager.
+ */
+export class Primitive {
+  modelMatrix: Matrix4 | undefined;
+  show: boolean;
+
+  constructor(public readonly options: Record<string, unknown>) {
+    this.modelMatrix = options['modelMatrix'] as Matrix4 | undefined;
+    this.show = (options['show'] as boolean | undefined) ?? true;
+  }
+}
+
+/** In-memory stand-in for Cesium's PrimitiveCollection. */
+export class PrimitiveCollection {
+  private readonly items = new Set<Primitive>();
+
+  add(primitive: Primitive): Primitive {
+    this.items.add(primitive);
+    return primitive;
+  }
+
+  remove(primitive: Primitive): boolean {
+    return this.items.delete(primitive);
+  }
+
+  removeAll(): void {
+    this.items.clear();
+  }
+
+  contains(primitive: Primitive): boolean {
+    return this.items.has(primitive);
+  }
+
+  get length(): number {
+    return this.items.size;
+  }
+
+  get values(): readonly Primitive[] {
+    return [...this.items];
+  }
+}
+
+/** Minimal Scene: the primitive collection and the per-frame preRender event. */
+export class Scene {
+  readonly primitives = new PrimitiveCollection();
+  readonly preRender = new CesiumEvent<[Scene, JulianDate | undefined]>();
 }
 
 export class Clock {
@@ -242,6 +327,7 @@ export class CesiumWidget {
 
   readonly entities = new EntityCollection();
   readonly clock = new Clock();
+  readonly scene = new Scene();
   private destroyed = false;
 
   constructor(

@@ -1,10 +1,8 @@
 Read:
 
 - CLAUDE.md
-- docs/product-vision.md
-- docs/requirements.md
-- docs/architecture.md
-- docs/roadmap.md
+- all files under docs/
+- all .claude/
 
 Analyze the current implementation.
 

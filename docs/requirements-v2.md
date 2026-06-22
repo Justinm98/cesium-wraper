@@ -6,6 +6,16 @@
 **Scope:** v2 — Epic A only (Beam footprints + Coverage visualization + link lines)
 
 **Changelog:**
+- 2026-06-21 (rev 4): **AMENDMENT — APPROVED 2026-06-21 (user sign-off).** Adds
+  **FR-A-01d** — the translucent beam *volume* is visibility-toggleable,
+  **default OFF**, via a global `@Input()`/method **plus** an optional per-beam
+  override (per-beam wins when specified, else inherits global); the ground
+  footprint outline is unaffected (always shown). Also records the **M1**
+  resolution (elliptical volume = non-uniform scaled cone). New API surface added
+  to §7 (#4). **Implementation sequencing:** the visibility toggle lands first;
+  the true elliptical-cone *volume* shape (M1) is built alongside the M2
+  real-Cesium smoke test — the only thing that can validate it — so until then
+  the volume keeps its documented circular approximation, now hidden by default.
 - 2026-06-20 (rev 3): **APPROVED.** Residual OQ-3 precedence decided by the user
   — external assignment **overrides engine computation per-terminal (no merge)**;
   FR-A-12c finalized (provisional marker removed). All open questions closed; the
@@ -154,6 +164,31 @@ model is shaped so additional geometries can be added later **without a breaking
 change** to existing circular/elliptical configurations.
 *(Requirement only — this document does not design the type. §7 flags that
 `beam.model.ts` must gain a geometry field/discriminator.)*
+
+**FR-A-01d (beam-volume visibility toggle — default OFF). [AMENDMENT 2026-06-21,
+APPROVED]**
+GIVEN a satellite with one or more configured beams,
+WHEN the scene renders,
+THEN each beam's translucent **solid volume** is shown only if its *effective
+volume visibility* is on; the default is **OFF**, so out of the box a configured
+beam shows its **ground footprint outline only** (FR-A-01), not its solid cone.
+The footprint outline is **not** affected by this toggle — it renders whenever
+the beam is configured, at full opacity, as in FR-A-01/FR-A-04.
+- **Global control:** a global setting (default `false`) toggles every beam's
+  volume at once, at runtime — distinct from coverage computation and link lines.
+- **Per-beam override:** a beam may individually opt its volume in or out.
+- **Precedence (APPROVED 2026-06-21):** a beam's per-beam
+  setting, **when specified, overrides** the global for that beam; when
+  unspecified, the beam inherits the global setting. Explicit per-beam wins — no
+  hidden magic.
+- The volume, when shown, stays **translucent** (FR-A-04 default opacity 0.3) so
+  the satellite, terminals, and globe remain visible through it.
+- Volume visibility is purely visual: it does **not** affect the covered-set
+  computation (FR-A-09d) or the footprint outline.
+*(This amends FR-A-01's "a translucent solid volume PLUS its ground-footprint
+outline … always available": the footprint stays always-on, but the solid
+volume's presence is now gated by this toggle and defaults off. API surface in
+§7 #4.)*
 
 **FR-A-02 (multiple beams).**
 GIVEN a satellite configured with N beams (1 ≤ N ≤ `maxBeamsPerSatellite`,
@@ -560,6 +595,16 @@ modified by this document.
    **Architect**. (One option the Architect may consider is folding an
    "enabled" flag into `CoverageConfig`; this document does not mandate the
    mechanism, only the capability.)
+
+4. **Beam-volume visibility surface — NEW (FR-A-01d, AMENDMENT 2026-06-21).**
+   Add a global runtime toggle for beam-volume visibility (default OFF): a new
+   method on `RenderingEngine` + mirrored `CesiumGlobeService` (e.g.
+   `setBeamVolumesVisible(visible: boolean)`) and a `CesiumGlobeComponent`
+   `@Input() showBeamVolumes = false`. Add an optional per-beam override
+   `showVolume?: boolean` to `BeamDefinition` (undefined ⇒ inherit global;
+   defined ⇒ overrides global for that beam). The footprint outline is
+   unaffected. Concrete names/signatures are the Architect's; flagged here as the
+   required additions.
 
 **Confirmed sufficient (no change required)**
 

@@ -2,22 +2,26 @@ import {
   CallbackProperty,
   Cartesian3,
   Color,
-  CylinderGraphics,
+  ColorGeometryInstanceAttribute,
+  CylinderGeometry,
   EllipseGraphics,
   EntityCollection,
+  GeometryInstance,
   JulianDate,
   Math as CesiumMath,
-  Matrix3,
-  Quaternion,
+  Matrix4,
+  PerInstanceColorAppearance,
+  Primitive,
+  Scene,
 } from '@cesium/engine';
 
 import { BeamDefinition, BeamGeometry } from '../../../core/models/beam.model';
 import { ColorConfig } from '../../../core/models/position.model';
-import { computeBoresightFrame, Vec3 } from '../services/coverage-geometry';
+import { computeBoresightFrame, computeConeModelMatrix } from '../services/coverage-geometry';
 
 /**
  * Beam entity ids extend the existing `satellite:` / `terminal:` namespacing so
- * a satellite's beams never collide and are bulk-removable per satellite.
+ * a satellite's footprints never collide and are bulk-removable per satellite.
  */
 const ID_PREFIX = 'beam:';
 
@@ -28,9 +32,9 @@ const DEFAULT_COLOR: ColorConfig = { r: 0, g: 200, b: 255, a: 1 };
 const DEFAULT_OPACITY = 0.3;
 
 /**
- * Length of the rendered cone, meters. Long enough to reach the ground from
- * any LEO/MEO/GEO satellite so the volume always intersects the ellipsoid.
- * The footprint outline is drawn separately at the true ellipsoid intersection.
+ * Length of the rendered cone, meters. Long enough to reach the ground from any
+ * LEO/MEO/GEO satellite so the volume always spans the ellipsoid. The footprint
+ * outline is drawn separately at the (approximate) ellipsoid intersection.
  */
 const CONE_LENGTH = 50_000_000;
 
@@ -43,47 +47,80 @@ export type SatellitePositionAccessor = (
   time: JulianDate | undefined
 ) => Cartesian3 | undefined;
 
+/** A beam's applied definition plus the scene primitive rendering its volume. */
+interface AppliedBeam {
+  def: BeamDefinition;
+  volume: Primitive;
+}
+
 /**
  * Owns the lifecycle of beam *visuals* for all satellites. Beams render
  * regardless of coverage (FR-A-01/09a); this manager has NO dependency on
  * coverage computation. All Cesium geometry choices are encapsulated here.
  *
- * Position and orientation are driven by Cesium callback properties evaluated
- * inside the render loop, so a beam tracks its satellite every tick (FR-A-05)
- * with zero per-frame Angular work (NFR-A-02, review H1). The beam reuses the
- * satellite's already-propagated position (no re-propagation) via the injected
- * {@link SatellitePositionAccessor}.
+ * Each beam has two pieces:
+ * - **Footprint outline** — an entity `EllipseGraphics` on the ground, always
+ *   shown when the beam is configured. Its position follows the satellite via a
+ *   render-loop `CallbackProperty` (FR-A-05), so no per-frame Angular work.
+ * - **Solid volume** — a translucent cone rendered as a scene `Primitive` whose
+ *   geometry is a UNIT cone in object space, placed/scaled each frame by the
+ *   primitive's `modelMatrix` (a non-uniform scale ⇒ a true elliptical cone for
+ *   elliptical beams, FR-A-01b). Object-space geometry is NOT split in world
+ *   coordinates, so a globe-spanning beam does not trip Cesium's longitude split
+ *   the way a world-space entity cone does (review-v2 M1/M2). The volume is
+ *   hidden by default and toggled per FR-A-01d.
+ *
+ * The per-frame `modelMatrix`/visibility update runs inside Cesium's render loop
+ * via `scene.preRender` — outside the Angular zone (NFR-A-02, review H1).
  */
 export class BeamManager {
   /** Applied beams per satellite, keyed by beam id (diff-not-replace state). */
-  private readonly bySatellite = new Map<string, Map<string, BeamDefinition>>();
+  private readonly bySatellite = new Map<string, Map<string, AppliedBeam>>();
+
+  /**
+   * Global default for solid-volume visibility (FR-A-01d). Default OFF: a
+   * configured beam shows only its footprint outline until volumes are enabled.
+   * Read live by the per-frame update, so toggling needs no entity rebuild.
+   */
+  private globalVolumesVisible = false;
+
+  /** Removes the per-frame `scene.preRender` listener on {@link destroy}. */
+  private readonly stopPreRender: () => void;
 
   constructor(
     private readonly entities: EntityCollection,
+    private readonly scene: Scene,
     private readonly maxBeamsPerSatellite: number,
     private readonly getSatellitePosition: SatellitePositionAccessor
-  ) {}
+  ) {
+    // One render-loop hook drives every beam volume's position/orientation and
+    // visibility each frame (FR-A-05/01d). Runs inside Cesium's loop, never the
+    // Angular zone.
+    this.stopPreRender = this.scene.preRender.addEventListener((_scene, time) =>
+      this.updateVolumes(time)
+    );
+  }
 
   /**
    * Adds, updates, or removes beams for a satellite so the rendered set matches
-   * `nextBeams`, without recreating unaffected beam entities (FR-A-06). The
-   * WHOLE set is validated first; if it is invalid (over-limit or bad params)
-   * the call throws before touching any entity (FR-A-07/08), so a satellite is
-   * never left with a partially-applied beam set.
+   * `nextBeams`, without recreating unaffected beams (FR-A-06). The WHOLE set is
+   * validated first; if it is invalid (over-limit or bad params) the call throws
+   * before touching any entity/primitive (FR-A-07/08), so a satellite is never
+   * left with a partially-applied beam set.
    */
   syncBeams(satelliteId: string, nextBeams: readonly BeamDefinition[] | undefined): void {
     const next = nextBeams ?? [];
-    // Zero/absent beams is a no-op, not an error (FR-A-20). Still run through
-    // the diff so any previously-applied beams are removed.
+    // Zero/absent beams is a no-op, not an error (FR-A-20). Still run the diff so
+    // any previously-applied beams are removed.
     this.validateSet(satelliteId, next);
 
-    const applied = this.bySatellite.get(satelliteId) ?? new Map<string, BeamDefinition>();
+    const applied = this.bySatellite.get(satelliteId) ?? new Map<string, AppliedBeam>();
     const nextById = new Map(next.map((beam) => [beam.id, beam]));
 
     // Remove beams that are gone.
-    for (const beamId of [...applied.keys()]) {
+    for (const [beamId, beam] of [...applied]) {
       if (!nextById.has(beamId)) {
-        this.entities.removeById(this.entityId(satelliteId, beamId));
+        this.removeBeam(satelliteId, beam);
         applied.delete(beamId);
       }
     }
@@ -91,12 +128,10 @@ export class BeamManager {
     for (const beam of next) {
       const previous = applied.get(beam.id);
       if (previous === undefined) {
-        this.entities.add(this.buildEntityOptions(satelliteId, beam));
-        applied.set(beam.id, beam);
-      } else if (previous !== beam) {
-        this.entities.removeById(this.entityId(satelliteId, beam.id));
-        this.entities.add(this.buildEntityOptions(satelliteId, beam));
-        applied.set(beam.id, beam);
+        applied.set(beam.id, this.addBeam(satelliteId, beam));
+      } else if (previous.def !== beam) {
+        this.removeBeam(satelliteId, previous);
+        applied.set(beam.id, this.addBeam(satelliteId, beam));
       }
     }
 
@@ -113,16 +148,25 @@ export class BeamManager {
     if (applied === undefined) {
       return;
     }
-    for (const beamId of applied.keys()) {
-      this.entities.removeById(this.entityId(satelliteId, beamId));
+    for (const beam of applied.values()) {
+      this.removeBeam(satelliteId, beam);
     }
     this.bySatellite.delete(satelliteId);
+  }
+
+  /**
+   * Sets the GLOBAL solid-volume visibility (FR-A-01d). Per-beam `showVolume`
+   * overrides this for individual beams. No rebuild: the next render frame reads
+   * the effective visibility and shows/hides each volume — zero Angular work.
+   */
+  setVolumesVisible(visible: boolean): void {
+    this.globalVolumesVisible = visible;
   }
 
   /** Resolved beams for a satellite, for the coverage calculator. */
   getBeams(satelliteId: string): readonly BeamDefinition[] {
     const applied = this.bySatellite.get(satelliteId);
-    return applied === undefined ? [] : [...applied.values()];
+    return applied === undefined ? [] : [...applied.values()].map((beam) => beam.def);
   }
 
   /** All satellite ids that currently have at least one beam. */
@@ -130,8 +174,68 @@ export class BeamManager {
     return [...this.bySatellite.keys()];
   }
 
+  /**
+   * Tears down the render-loop hook and removes every beam volume primitive.
+   * Called by the engine on destroy so no per-frame update survives teardown.
+   */
+  destroy(): void {
+    this.stopPreRender();
+    for (const [satelliteId, applied] of this.bySatellite) {
+      for (const beam of applied.values()) {
+        this.removeBeam(satelliteId, beam);
+      }
+    }
+    this.bySatellite.clear();
+  }
+
+  private addBeam(satelliteId: string, beam: BeamDefinition): AppliedBeam {
+    this.entities.add(this.buildFootprintEntity(satelliteId, beam));
+    const volume = this.buildVolumePrimitive(beam);
+    this.scene.primitives.add(volume);
+    return { def: beam, volume };
+  }
+
+  private removeBeam(satelliteId: string, beam: AppliedBeam): void {
+    this.entities.removeById(this.entityId(satelliteId, beam.def.id));
+    this.scene.primitives.remove(beam.volume);
+  }
+
   private entityId(satelliteId: string, beamId: string): string {
     return `${ID_PREFIX}${satelliteId}:${beamId}`;
+  }
+
+  /**
+   * Effective solid-volume visibility for one beam (FR-A-01d precedence): the
+   * per-beam `showVolume`, when defined, overrides the global; otherwise the
+   * beam inherits the global `setVolumesVisible` state. Explicit per-beam wins.
+   */
+  private effectiveVolumeVisible(beam: BeamDefinition): boolean {
+    return beam.showVolume ?? this.globalVolumesVisible;
+  }
+
+  /**
+   * Per-frame update of every beam volume (FR-A-05/01d), invoked from
+   * `scene.preRender`. Re-points each primitive's `modelMatrix` from the
+   * satellite's current position and the beam's boresight frame, and applies the
+   * effective volume visibility. A beam with no current position is hidden until
+   * propagation yields one (so a beam never renders detached from its satellite).
+   */
+  private updateVolumes(time: JulianDate | undefined): void {
+    for (const [satelliteId, applied] of this.bySatellite) {
+      const position = this.getSatellitePosition(satelliteId, time);
+      for (const beam of applied.values()) {
+        if (position === undefined || !this.effectiveVolumeVisible(beam.def)) {
+          beam.volume.show = false;
+          continue;
+        }
+        const ecef = { x: position.x, y: position.y, z: position.z };
+        const frame = computeBoresightFrame(ecef, beam.def.azimuth, beam.def.elevation);
+        const { azimuthRadius, elevationRadius } = coneRadii(beam.def.geometry);
+        const matrix = computeConeModelMatrix(ecef, frame, azimuthRadius, elevationRadius, CONE_LENGTH);
+        beam.volume.modelMatrix = Matrix4.fromColumnMajorArray(matrix);
+        beam.volume.show = true;
+      }
+    }
   }
 
   /**
@@ -202,102 +306,55 @@ export class BeamManager {
   }
 
   /**
-   * Builds the Cesium entity for one beam: a translucent solid volume that
-   * tracks the satellite's position/orientation, plus a full-opacity ground
-   * footprint outline (FR-A-01/03/04).
+   * The ground footprint outline entity (full opacity, FR-A-04). Its position
+   * tracks the satellite via a render-loop callback (FR-A-05). Circular beams use
+   * equal semi-axes; elliptical beams use semi-axes derived from the two
+   * half-angles, so the elliptical footprint reads as an ellipse.
    */
-  private buildEntityOptions(satelliteId: string, beam: BeamDefinition): object {
-    const fill = this.resolveFill(beam);
+  private buildFootprintEntity(satelliteId: string, beam: BeamDefinition): object {
     const outline = this.resolveColor(beam.color); // full opacity for legibility
+    const { semiMajorAxis, semiMinorAxis } = footprintAxes(beam.geometry);
     return {
       id: this.entityId(satelliteId, beam.id),
-      // Position is the satellite's live position — reused, never re-propagated.
       position: new CallbackProperty(
         (time) => this.getSatellitePosition(satelliteId, time),
         false
       ),
-      // Orientation derives from the shared boresight frame each tick.
-      orientation: new CallbackProperty(
-        (time) => this.computeOrientation(satelliteId, beam, time),
-        false
-      ),
-      cylinder: this.buildVolume(beam.geometry, fill, outline),
-      ellipse: this.buildFootprint(beam.geometry, outline),
+      ellipse: new EllipseGraphics({
+        semiMajorAxis,
+        semiMinorAxis,
+        fill: false,
+        outline: true,
+        outlineColor: outline,
+      }),
     };
   }
 
   /**
-   * Computes the beam orientation quaternion from the shared boresight frame
-   * (the SAME frame the coverage test uses, so visual and computed coverage
-   * cannot diverge). Returns `undefined` when the satellite has no position
-   * yet, so Cesium simply skips drawing until propagation yields a value.
+   * The translucent solid-volume primitive: a UNIT cone (apex at the origin,
+   * opening along +Z) carried in OBJECT space, placed/scaled each frame by the
+   * primitive's `modelMatrix` ({@link updateVolumes}). A non-uniform scale yields
+   * a true elliptical cone for elliptical beams (FR-A-01b); equal radii give a
+   * circular cone (FR-A-01a). Hidden until the first frame sets its matrix and
+   * the effective visibility (FR-A-01d default OFF).
    */
-  private computeOrientation(
-    satelliteId: string,
-    beam: BeamDefinition,
-    time: JulianDate | undefined
-  ): Quaternion | undefined {
-    const position = this.getSatellitePosition(satelliteId, time);
-    if (position === undefined) {
-      return undefined;
-    }
-    const ecef: Vec3 = { x: position.x, y: position.y, z: position.z };
-    const frame = computeBoresightFrame(ecef, beam.azimuth, beam.elevation);
-    // Cesium cylinders extend along +Z; our boresight frame's +Z is the
-    // boresight, so the column-major rotation matrix maps local axes to ECEF.
-    const matrix = Matrix3.fromColumnMajorArray([
-      frame.azimuthAxis.x,
-      frame.azimuthAxis.y,
-      frame.azimuthAxis.z,
-      frame.elevationAxis.x,
-      frame.elevationAxis.y,
-      frame.elevationAxis.z,
-      frame.boresight.x,
-      frame.boresight.y,
-      frame.boresight.z,
-    ]);
-    return Quaternion.fromRotationMatrix(matrix);
-  }
-
-  /**
-   * The translucent cone volume. Both geometries render as a Cesium cylinder
-   * cone (apex at the satellite); the bottom radius is sized from the
-   * representative (larger) half-angle.
-   *
-   * v2 limitation (M1, review-v2 — user decision: footprint-only for v2): an
-   * ELLIPTICAL beam's solid VOLUME renders here as a bounding SYMMETRIC cone of
-   * the larger half-angle, while its FOOTPRINT outline ({@link buildFootprint})
-   * and the covered-set COMPUTATION are truly elliptical. A true elliptical-cone
-   * volume primitive (architecture-v2 OQ-3) is explicitly deferred past v2. This
-   * is documented, not hidden: see {@link EllipticalBeamGeometry}.
-   */
-  private buildVolume(geometry: BeamGeometry, fill: Color, outline: Color): CylinderGraphics {
-    const halfAngle = representativeHalfAngle(geometry);
-    const bottomRadius = CONE_LENGTH * global.Math.tan(CesiumMath.toRadians(halfAngle));
-    return new CylinderGraphics({
-      length: CONE_LENGTH,
-      topRadius: 0,
-      bottomRadius,
-      material: fill,
-      outline: true,
-      outlineColor: outline,
-      numberOfVerticalLines: 0,
-    });
-  }
-
-  /**
-   * The ground footprint outline at full opacity (FR-A-04). Circular beams use
-   * equal semi-axes; elliptical beams use semi-axes derived from the two
-   * half-angles, so the elliptical footprint reads as an ellipse.
-   */
-  private buildFootprint(geometry: BeamGeometry, outline: Color): EllipseGraphics {
-    const { semiMajorAxis, semiMinorAxis } = footprintAxes(geometry);
-    return new EllipseGraphics({
-      semiMajorAxis,
-      semiMinorAxis,
-      fill: false,
-      outline: true,
-      outlineColor: outline,
+  private buildVolumePrimitive(beam: BeamDefinition): Primitive {
+    return new Primitive({
+      geometryInstances: new GeometryInstance({
+        geometry: new CylinderGeometry({
+          length: 1,
+          topRadius: 1, // base (radius 1) at +Z
+          bottomRadius: 0, // apex (radius 0) at -Z
+          slices: 32,
+          vertexFormat: PerInstanceColorAppearance.VERTEX_FORMAT,
+        }),
+        attributes: {
+          color: ColorGeometryInstanceAttribute.fromColor(this.resolveFill(beam)),
+        },
+      }),
+      appearance: new PerInstanceColorAppearance({ translucent: true, flat: true, closed: false }),
+      asynchronous: false,
+      show: false,
     });
   }
 
@@ -313,14 +370,19 @@ export class BeamManager {
   }
 }
 
-/** Half-angle used to size the rendered cone for either geometry. */
-function representativeHalfAngle(geometry: BeamGeometry): number {
+/** Cone base semi-axes (meters) for either geometry, sized over the cone length. */
+function coneRadii(geometry: BeamGeometry): { azimuthRadius: number; elevationRadius: number } {
+  const project = (deg: number): number => CONE_LENGTH * Math.tan(CesiumMath.toRadians(deg));
   switch (geometry.kind) {
-    case 'circular':
-      return geometry.halfAngle;
+    case 'circular': {
+      const r = project(geometry.halfAngle);
+      return { azimuthRadius: r, elevationRadius: r };
+    }
     case 'elliptical':
-      // Use the larger half-angle so the volume bounds the elliptical footprint.
-      return global.Math.max(geometry.azimuthHalfAngle, geometry.elevationHalfAngle);
+      return {
+        azimuthRadius: project(geometry.azimuthHalfAngle),
+        elevationRadius: project(geometry.elevationHalfAngle),
+      };
   }
 }
 
@@ -332,7 +394,7 @@ function footprintAxes(geometry: BeamGeometry): {
   semiMajorAxis: number;
   semiMinorAxis: number;
 } {
-  const project = (deg: number): number => CONE_LENGTH * global.Math.tan(CesiumMath.toRadians(deg));
+  const project = (deg: number): number => CONE_LENGTH * Math.tan(CesiumMath.toRadians(deg));
   switch (geometry.kind) {
     case 'circular': {
       const r = project(geometry.halfAngle);
@@ -341,7 +403,7 @@ function footprintAxes(geometry: BeamGeometry): {
     case 'elliptical': {
       const a = project(geometry.azimuthHalfAngle);
       const b = project(geometry.elevationHalfAngle);
-      return { semiMajorAxis: global.Math.max(a, b), semiMinorAxis: global.Math.min(a, b) };
+      return { semiMajorAxis: Math.max(a, b), semiMinorAxis: Math.min(a, b) };
     }
   }
 }

@@ -98,6 +98,18 @@ export interface RenderingEngine {
    */
   clearCoverageAssignment(): void;
 
+  /**
+   * Shows or hides the translucent solid beam VOLUMES globally (FR-A-01d).
+   * Default OFF — until enabled, a configured beam shows only its ground
+   * footprint outline, not its solid cone. A per-beam `showVolume` on a
+   * `BeamDefinition` overrides this global for that beam (explicit per-beam
+   * wins; an undefined `showVolume` inherits this value).
+   *
+   * Purely visual: independent of coverage computation, link lines, and the
+   * footprint outline (which always renders).
+   */
+  setBeamVolumesVisible(visible: boolean): void;
+
   /** Emits when the end user clicks a 3D model. */
   readonly entityClick$: Observable<EntityEvent>;
 

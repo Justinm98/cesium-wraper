@@ -35,6 +35,7 @@ export function createMockEngine(): MockRenderingEngine {
     setCoverageComputationEnabled: jest.fn(),
     setCoverageAssignment: jest.fn(),
     clearCoverageAssignment: jest.fn(),
+    setBeamVolumesVisible: jest.fn(),
     entityClick$: clickSubject.asObservable(),
     entityHover$: hoverSubject.asObservable(),
     terminalPlaced$: placedSubject.asObservable(),

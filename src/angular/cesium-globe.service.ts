@@ -99,4 +99,12 @@ export class CesiumGlobeService {
   clearCoverageAssignment(): void {
     this.engine.clearCoverageAssignment();
   }
+
+  /**
+   * Shows or hides the translucent solid beam volumes globally (FR-A-01d).
+   * Default OFF; a per-beam `showVolume` overrides this for individual beams.
+   */
+  setBeamVolumesVisible(visible: boolean): void {
+    this.engine.setBeamVolumesVisible(visible);
+  }
 }

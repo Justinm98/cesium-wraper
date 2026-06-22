@@ -127,6 +127,7 @@ export class CesiumRenderingEngine implements RenderingEngine {
     );
     this.beams = new BeamManager(
       this.widget.entities,
+      this.widget.scene,
       config.performance?.maxBeamsPerSatellite ?? DEFAULT_MAX_BEAMS_PER_SATELLITE,
       (satId, time) => this.satellites?.getPosition(satId, time)
     );
@@ -150,6 +151,9 @@ export class CesiumRenderingEngine implements RenderingEngine {
     // removes the registered listener (and reverts recolors / clears link
     // lines) so no per-tick `recompute()` can survive teardown.
     this.coverage?.setEnabled(false);
+    // Tear down the beam volumes' per-frame render-loop hook (mirrors the M5
+    // coverage teardown) before destroying the widget/scene.
+    this.beams?.destroy();
     if (!this.widget.isDestroyed()) {
       this.widget.destroy();
     }
@@ -257,6 +261,11 @@ export class CesiumRenderingEngine implements RenderingEngine {
 
   clearCoverageAssignment(): void {
     this.setCoverageAssignment({ assignments: [] });
+  }
+
+  setBeamVolumesVisible(visible: boolean): void {
+    this.requireInitialized();
+    this.requireBeams().setVolumesVisible(visible);
   }
 
   private createImageryProvider(

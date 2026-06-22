@@ -8,6 +8,17 @@ security vulnerability in the new code; one pre-existing transitive npm advisory
 incorrect for elliptical beams)** and **M1 (the elliptical *volume* is not an
 elliptical cone, contradicting FR-A-01b)**. Everything else is shippable as
 documented debt or with a follow-up.
+
+> **Update 2026-06-21 (post-review remediation):** **H1** (elliptical coverage
+> math) fixed in `coverage-geometry`; **M4** (per-tick frame hoist) and **M5**
+> (explicit coverage tick-listener teardown) fixed; **M1** (elliptical *volume*)
+> fixed — the volume is now a local-space `Primitive` with a non-uniform
+> `modelMatrix` (a true elliptical cone); **M2** (real-Cesium smoke test, NFR-A-03)
+> built and green ([smoke/](../smoke)). The smoke test also caught and fixed a
+> Node-only `global.Math` that crashed in the browser, and surfaced a pre-existing
+> footprint over-sizing bug (still open). Open: **M3** (one-line decision) and the
+> footprint sizing. Unit suite 217 green, ~97.9% stmt / ~95.1% branch; smoke 3 green.
+
 **Date:** 2026-06-20
 **Reviewer:** QA / Security Reviewer agent
 **Scope:** the v2 Epic A diff (beams, coverage computation, link lines, external

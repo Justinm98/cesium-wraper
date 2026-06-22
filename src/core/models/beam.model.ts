@@ -85,4 +85,16 @@ export interface BeamDefinition {
   color?: ColorConfig;
   /** Cone fill opacity, 0-1. Engine default 0.3 applies when omitted (FR-A-04). */
   opacity?: number;
+  /**
+   * Per-beam override for the translucent solid VOLUME's visibility (FR-A-01d).
+   * - `undefined` (default) ⇒ inherit the global `showBeamVolumes` setting
+   *   (`RenderingEngine.setBeamVolumesVisible` / the component `@Input()`), which
+   *   is itself default OFF.
+   * - `true`/`false` ⇒ override the global for THIS beam (explicit per-beam wins).
+   *
+   * Only the solid volume is affected; the ground footprint outline always
+   * renders whenever the beam is configured. Purely visual — does not affect the
+   * covered-set computation.
+   */
+  showVolume?: boolean;
 }

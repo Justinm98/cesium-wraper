@@ -67,7 +67,7 @@ lint clean, green build):
 | **Requirements** | ✅ **Approved 2026-06-20** | Done — see [requirements-v2.md](requirements-v2.md) (APPROVED; all OQs resolved) |
 | **Architecture** | ✅ **Approved 2026-06-20** | Done — see [architecture-v2.md](architecture-v2.md) (APPROVED); deltas folded into [architecture.md](architecture.md) header |
 | **Implementation** | ✅ **Complete 2026-06-20** | Done — PM-verified: tsc clean, lint clean, **191/191 tests** (+90), ~97.7% stmt / 94.9% branch coverage, ng-packagr build green |
-| **Testing / QA** | 🟡 **In progress** | QA review (docs/review-v2.md) **and** the real-Cesium Playwright/WebGL smoke test (NFR-A-03) |
+| **Testing / QA** | 🟡 **In progress** | QA review (docs/review-v2.md). The real-Cesium Playwright/WebGL smoke test (NFR-A-03) is **built & green** (2026-06-21, [smoke/](smoke/)); review-v2 blockers H1/M1 resolved, M2 met. Remaining: M3 decision + the footprint-sizing fix surfaced by the smoke test. |
 | Review | ⚪ Not started | — |
 
 **Implementation outcome (2026-06-20):** New engine internals
@@ -78,7 +78,10 @@ methods and +2 component `@Input`s; both v1 coverage stubs replaced. Verified by
 the PM (not just self-reported). One known visual approximation flagged for QA:
 the elliptical *volume* renders as a cone sized to the larger half-angle while
 *coverage computation* uses the true elliptical test — to be pinned down by the
-real-Cesium smoke test.
+real-Cesium smoke test. **Resolved 2026-06-21 (M1):** the volume is now a
+local-space `Primitive` placed by a non-uniform `modelMatrix` (a true elliptical
+cone), validated by the NFR-A-03 smoke test; the volume is also visibility-
+toggleable (FR-A-01d, default off).
 
 **Architecture outcome (2026-06-20):** discriminated-union beam `geometry`
 (clean break — `halfAngle` removed); coverage computation behind a dedicated

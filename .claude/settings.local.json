@@ -46,7 +46,10 @@
       "Bash(sed -i 's/localhost:420[0-9]/localhost:4208/g' /tmp/verify-satellite.mjs *)",
       "Bash(echo \"=== TSC DONE \\(exit $?\\) ===\")",
       "Bash(echo \"=== BUILD exit $? ===\")",
-      "Bash(echo \"EXIT tsc:$?\")"
+      "Bash(echo \"EXIT tsc:$?\")",
+      "Bash(node -e \"const p=require\\('./node_modules/@cesium/engine/package.json'\\); console.log\\('main:',p.main,'module:',p.module,'version:',p.version\\)\")",
+      "Bash(npx esbuild *)",
+      "Bash(node .smoke-probe-tmp/run-probe.mjs)"
     ],
     "additionalDirectories": [
       "/tmp"

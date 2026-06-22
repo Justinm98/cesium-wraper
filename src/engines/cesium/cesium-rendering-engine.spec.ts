@@ -23,6 +23,10 @@ interface MockWidget {
   options: { baseLayer?: { provider: object }; skyBox?: false; skyAtmosphere?: false };
   clock: { multiplier: number; clockStep: number; shouldAnimate: boolean };
   entities: { getById(id: string): object | undefined };
+  scene: {
+    primitives: { length: number; values: readonly { show: boolean }[] };
+    preRender: { listenerCount: number };
+  };
   isDestroyed(): boolean;
 }
 
@@ -307,6 +311,22 @@ describe('CesiumRenderingEngine', () => {
       expect(() => fresh.setCoverageComputationEnabled(true)).toThrow(/not initialized/);
       expect(() => fresh.setCoverageAssignment({ assignments: [] })).toThrow(/not initialized/);
       expect(() => fresh.clearCoverageAssignment()).toThrow(/not initialized/);
+    });
+
+    it('renders the beam volume as a scene primitive + footprint entity, toggleable (FR-A-01d)', () => {
+      engine.addSatellite({ id: 'iss', tle: ISS_TLE, beams: [beam] });
+      // The translucent volume is a scene primitive; the footprint is the entity.
+      expect(widget().scene.primitives.length).toBe(1);
+      expect(widget().entities.getById('beam:iss:b1')).toBeDefined();
+      // The global volume toggle is accepted at runtime (per-frame visibility and
+      // precedence are covered exhaustively in beam.manager.spec).
+      expect(() => engine.setBeamVolumesVisible(true)).not.toThrow();
+      expect(() => engine.setBeamVolumesVisible(false)).not.toThrow();
+    });
+
+    it('requires initialization for setBeamVolumesVisible (FR-A-01d)', () => {
+      const fresh = new CesiumRenderingEngine();
+      expect(() => fresh.setBeamVolumesVisible(true)).toThrow(/not initialized/);
     });
   });
 

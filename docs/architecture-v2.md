@@ -17,6 +17,16 @@
   primitive choice stays behind `beam.manager.ts`; the real-Cesium smoke test
   (§5) de-risks it.
 
+**Amendment 2026-06-21 (APPROVED — user sign-off):** §2.5 adds a beam-volume
+visibility toggle (FR-A-01d — default OFF; global `@Input()`/method + optional
+per-beam `showVolume`, per-beam wins) and records the **M1** resolution
+(elliptical *volume* = non-uniform scaled cone). **Sequencing:** the toggle is
+implemented now; the elliptical-cone *volume* shape (M1) is built with the M2
+real-Cesium smoke test (§5) — the only thing that can validate it against real
+Cesium — since `BeamManager` renders volumes as entities (no `scene.primitives`
+access) and the unit mock cannot model the primitive path. The rest of this
+document remains APPROVED (2026-06-20).
+
 **Amends:** This document extends — and stays consistent with — the approved
 [architecture.md](architecture.md). It **amends architecture.md §3 (module
 layout), §4 (domain model), §5 (RenderingEngine interface), §6 (Angular layer),
@@ -319,6 +329,7 @@ export interface CircularBeamGeometry   { kind: 'circular';   halfAngle: number;
 export interface EllipticalBeamGeometry { kind: 'elliptical'; azimuthHalfAngle: number; elevationHalfAngle: number; }
 export type BeamGeometry = CircularBeamGeometry | EllipticalBeamGeometry;
 // BeamDefinition gains a REQUIRED `geometry: BeamGeometry`; legacy `halfAngle` is REMOVED (clean break, OQ-1).
+// AMENDMENT 2026-06-21: BeamDefinition also gains optional `showVolume?: boolean` (per-beam volume-visibility override; undefined ⇒ inherit global). §2.5.
 
 // ── core/models/coverage-assignment.model.ts (NEW — §2.2) ─────────────────────
 export interface CoverageLink { satelliteId: string; beamId?: string; }
@@ -333,6 +344,7 @@ interface RenderingEngine {
   setCoverageComputationEnabled(enabled: boolean): void;      // NEW (§2.3)
   setCoverageAssignment(assignment: CoverageAssignment): void;// NEW (§2.2)
   clearCoverageAssignment(): void;                            // NEW (§2.2)
+  setBeamVolumesVisible(visible: boolean): void;              // NEW (§2.5, amendment 2026-06-21)
 }
 
 // ── angular/cesium-globe.service.ts (REVISED — mirrors the 3 new methods) ─────
@@ -342,6 +354,7 @@ interface RenderingEngine {
 // ── angular/cesium-globe.component.ts (REVISED — new @Inputs) ─────────────────
 //   @Input() coverageComputationEnabled = false;   // FR-A-09a default OFF
 //   @Input() coverageAssignment?: CoverageAssignment;
+//   @Input() showBeamVolumes = false;              // FR-A-01d default OFF (amendment 2026-06-21)
 //   Applied in ngOnInit + ngOnChanges, mirroring the existing coverageConfig path.
 ```
 
@@ -350,6 +363,43 @@ interface RenderingEngine {
 global covered color (FR-A-17) and link-line config (FR-A-14/16). Its TSDoc
 "post-v1 rendering" should read "v2" on sign-off (requirements §7 doc-nit) — a
 cosmetic comment-only change, listed in §7.
+
+### 2.5 — Beam-volume visibility toggle + M1 elliptical-cone volume (AMENDMENT 2026-06-21, APPROVED)
+
+**Requirement recap (FR-A-01d + M1).** The translucent solid beam *volume* is
+visibility-toggleable, **default OFF**; the ground footprint outline is
+unaffected (always shown). Control is **global** plus an optional **per-beam**
+override. And **M1:** when a volume *is* shown for an elliptical beam, it must be
+a true elliptical cone, resolved here as a **non-uniform scaled cone**.
+
+**Public surface (purely additive).**
+- `BeamDefinition` gains optional `showVolume?: boolean`.
+- `RenderingEngine` + `CesiumGlobeService` gain
+  `setBeamVolumesVisible(visible: boolean): void`.
+- `CesiumGlobeComponent` gains `@Input() showBeamVolumes = false`, applied in
+  `ngOnInit`/`ngOnChanges` exactly like the other coverage inputs.
+
+**Effective visibility + precedence.** `BeamManager` computes, per beam,
+`effectiveVolumeVisible = beam.showVolume ?? globalShowBeamVolumes`. A defined
+per-beam value **overrides** the global; an undefined one **inherits** it.
+Explicit per-beam wins (no hidden magic). Default global `false` ⇒ default
+effective `hidden`.
+
+**M1 — non-uniform scaled cone.** Replace the current radially-symmetric
+`CylinderGraphics` sized to `representativeHalfAngle = max(azHalf, elHalf)` with a
+cone whose cross-section semi-axes are derived independently from the azimuth and
+elevation half-angles — a **non-uniform scale** applied via a primitive
+`modelMatrix` (the §3.1.C option (b) path) — so the rendered volume is a true
+elliptical cone matching the already-correct elliptical footprint and the
+corrected elliptical coverage test (`coverage-geometry`, review-v2 H1). The
+circular case is the equal-semi-axis special case. All Cesium geometry stays
+behind `beam.manager.ts`. This is exactly what the NFR-A-03 smoke test (M2) must
+validate against real Cesium.
+
+**Render/teardown semantics.** Toggling visibility shows/hides only the volume;
+the footprint-outline entity is never touched. Toggling the global re-evaluates
+all beams in O(beams) — no rebuild. Coverage computation (FR-A-09d) is fully
+independent of volume visibility.
 
 ---
 

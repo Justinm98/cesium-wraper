@@ -79,6 +79,11 @@ describe('CesiumGlobeService', () => {
     expect(engine.clearCoverageAssignment).toHaveBeenCalled();
   });
 
+  it('delegates the beam-volume visibility toggle (FR-A-01d)', () => {
+    service.setBeamVolumesVisible(true);
+    expect(engine.setBeamVolumesVisible).toHaveBeenCalledWith(true);
+  });
+
   it('exposes the engine event streams', () => {
     const click = jest.fn();
     service.entityClick$.subscribe(click);

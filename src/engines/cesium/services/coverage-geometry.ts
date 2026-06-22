@@ -248,3 +248,44 @@ export function computeBoresightFrame(
   const elevationAxis = normalize(cross(boresight, azimuthAxis));
   return { boresight, azimuthAxis, elevationAxis };
 }
+
+/**
+ * Column-major 4x4 model matrix that places a UNIT cone — a Cesium
+ * `CylinderGeometry` with `length: 1`, `topRadius: 1`, `bottomRadius: 0` (apex at
+ * local z = −0.5, circular base of radius 1 at z = +0.5) — so that:
+ *  - the apex sits at the satellite (`satelliteEcef`),
+ *  - the cone opens along the beam boresight (toward the ground),
+ *  - the base cross-section is an ellipse with semi-axes `azimuthRadius` (along
+ *    the azimuth axis) and `elevationRadius` (along the elevation axis),
+ *  - the cone spans `length` metres from apex to base.
+ *
+ * Rendering the cone as a `Primitive` with this matrix keeps its geometry in
+ * OBJECT space (only the matrix is applied, on the GPU), so — unlike an entity
+ * `CylinderGraphics` sized in world space — Cesium never runs the world-space
+ * longitude split that throws for a globe-spanning beam (review-v2 M1/M2).
+ *
+ * Non-uniform `azimuthRadius` vs `elevationRadius` yields a true elliptical cone
+ * (FR-A-01b); equal radii collapse to a circular cone (FR-A-01a). The frame is
+ * right-handed (azimuthAxis × elevationAxis = boresight), so the matrix has a
+ * positive determinant — no inverted winding. Pure — no Cesium.
+ */
+export function computeConeModelMatrix(
+  satelliteEcef: Vec3,
+  frame: BoresightFrame,
+  azimuthRadius: number,
+  elevationRadius: number,
+  length: number
+): number[] {
+  const col0 = scale(frame.azimuthAxis, azimuthRadius);
+  const col1 = scale(frame.elevationAxis, elevationRadius);
+  const col2 = scale(frame.boresight, length);
+  // Apex (local z = −0.5) maps to the satellite ⇒ T = sat + boresight·(length/2).
+  const t = add(satelliteEcef, scale(frame.boresight, length * 0.5));
+  // prettier-ignore
+  return [
+    col0.x, col0.y, col0.z, 0,
+    col1.x, col1.y, col1.z, 0,
+    col2.x, col2.y, col2.z, 0,
+    t.x,    t.y,    t.z,    1,
+  ];
+}
