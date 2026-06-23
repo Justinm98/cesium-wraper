@@ -86,31 +86,61 @@ export class CoverageCalculator {
   ) {}
 
   /**
-   * Enables/disables computation (FR-A-09a/09b). Enabling subscribes to the
-   * clock tick and evaluates immediately; disabling unsubscribes, reverts every
-   * recolored terminal to its model default, and removes all link lines —
-   * within one tick — while beams keep rendering (owned by BeamManager).
+   * Enables/disables the GEOMETRIC computation (FR-A-09a/09b). Enabling evaluates
+   * immediately; disabling reverts every geometry-recolored terminal to its model
+   * default and removes its link lines — within one tick — while beams keep
+   * rendering (owned by BeamManager). An external assignment, if present, stays
+   * authoritative for its named terminals regardless of this toggle (M3); see
+   * {@link setAssignment} and {@link syncTickSubscription}.
    */
   setEnabled(enabled: boolean): void {
     if (enabled === this.enabled) {
       return;
     }
     this.enabled = enabled;
-    if (enabled) {
-      // L1 (review-v2): although `setEnabled` may be called from INSIDE the
-      // Angular zone (via ngOnChanges → setCoverageComputationEnabled), this
-      // listener FIRES inside Cesium's render loop, which the engine starts
-      // under `runOutsideAngular` in `initialize`. zone.js keys re-entry off
-      // where a listener fires, not where it is registered, so the per-tick
-      // `recompute` introduces NO Angular change detection regardless of where
-      // it was wired up (NFR-A-02).
+    this.syncTickSubscription();
+    // Applies the new state in this call: when enabling, evaluate now; when
+    // disabling, the recompute reverts geometry-covered terminals while leaving
+    // any externally-assigned terminals colored.
+    this.recompute();
+  }
+
+  /**
+   * Subscribes to / unsubscribes from the clock tick so the per-tick
+   * {@link recompute} runs exactly when there is something to drive each frame:
+   * the geometric computation (`enabled`) OR a non-empty external assignment,
+   * which is authoritative for its named terminals regardless of the computation
+   * toggle (FR-A-12a, M3). A fully-idle calculator (disabled, no assignment)
+   * holds no listener, so it costs nothing per tick.
+   *
+   * L1 (review-v2): although this may run from INSIDE the Angular zone (via
+   * ngOnChanges → setCoverage*), the listener FIRES inside Cesium's render loop,
+   * which the engine starts under `runOutsideAngular` in `initialize`. zone.js
+   * keys re-entry off where a listener fires, not where it is registered, so the
+   * per-tick `recompute` introduces NO Angular change detection (NFR-A-02).
+   */
+  private syncTickSubscription(): void {
+    const active = this.enabled || this.assignment.assignments.length > 0;
+    if (active && this.unsubscribe === undefined) {
       this.unsubscribe = this.clock.onTick.addEventListener(() => this.recompute());
-      this.recompute();
-    } else {
-      this.unsubscribe?.();
+    } else if (!active && this.unsubscribe !== undefined) {
+      this.unsubscribe();
       this.unsubscribe = undefined;
-      this.revertAll();
     }
+  }
+
+  /**
+   * Full teardown for engine destroy: unconditionally removes the tick listener
+   * and reverts all visuals (recolors + link lines). Distinct from
+   * `setEnabled(false)`, which may KEEP a live external assignment (M3); destroy
+   * drops everything so nothing survives teardown (review-v2 M5).
+   */
+  destroy(): void {
+    this.unsubscribe?.();
+    this.unsubscribe = undefined;
+    this.enabled = false;
+    this.assignment = { assignments: [] };
+    this.revertAll();
   }
 
   /**
@@ -122,9 +152,8 @@ export class CoverageCalculator {
     this.linkLinesVisible = config.showLinkLines;
     this.overrideActive = false;
     this.deps.setLinkLineColor(config.linkLineColor);
-    if (this.enabled) {
-      this.recompute();
-    }
+    // Reapply with the new colors/visibility; recompute is a no-op while idle.
+    this.recompute();
   }
 
   /**
@@ -134,29 +163,32 @@ export class CoverageCalculator {
   setLinkLinesVisible(visible: boolean): void {
     this.linkLinesVisible = visible;
     this.overrideActive = true;
-    if (this.enabled) {
-      this.recompute();
-    }
+    this.recompute();
   }
 
   /**
    * Replaces the external assignment wholesale (FR-A-12a/12c).
    *
-   * The assignment is APPLIED only while computation is enabled: it is stored
-   * unconditionally, but it drives terminal coloring/link lines only on a
-   * `recompute()`, which runs only when `enabled` is true. With computation off
-   * the assignment is retained but inert (M3, review-v2 — kept as-built by user
-   * decision; documented so it is not hidden magic). Unknown terminal/satellite
-   * ids in the assignment are silently ignored: a phantom `terminalId` is never
-   * visited (the recompute iterates scene terminals), and a `satelliteId` link
-   * to a non-existent satellite resolves to an empty endpoint and draws nothing
-   * (L5, review-v2).
+   * The assignment is authoritative for the terminals it names and is APPLIED
+   * regardless of the computation toggle (M3, review-v2 — resolved 2026-06-23 to
+   * "apply standalone"): with computation OFF, the named terminals are still
+   * colored/linked from the assignment and unnamed terminals stay at their model
+   * default (no geometry runs); with computation ON, unnamed terminals fall back
+   * to the engine's own FR-A-09d computation (FR-A-12b). A non-empty assignment
+   * therefore subscribes to the tick on its own ({@link syncTickSubscription}) so
+   * it tracks scene changes even when computation is disabled.
+   *
+   * Unknown terminal/satellite ids are silently ignored: a phantom `terminalId`
+   * is never visited (recompute iterates scene terminals), and a `satelliteId`
+   * link to a non-existent satellite resolves to an empty endpoint and draws
+   * nothing (L5, review-v2).
    */
   setAssignment(assignment: CoverageAssignment): void {
     this.assignment = assignment;
-    if (this.enabled) {
-      this.recompute();
-    }
+    // A newly non-empty assignment may need the tick even with computation off; a
+    // now-empty one with computation off can release it.
+    this.syncTickSubscription();
+    this.recompute();
   }
 
   /** Clears the external assignment (FR-A-12d). */
@@ -174,7 +206,8 @@ export class CoverageCalculator {
    * link-line membership (FR-A-09/10/11/13/17/19). Idempotent within a tick.
    */
   private recompute(): void {
-    if (!this.enabled || this.config === undefined) {
+    const config = this.config;
+    if (config === undefined) {
       return;
     }
     const time = this.clock.currentTime;
@@ -186,7 +219,9 @@ export class CoverageCalculator {
     // this tick, beam azimuth/elevation) — NOT on the terminal. Compute every
     // (satellite, beam) frame ONCE per tick here, then test all terminals
     // against the precomputed frames. This removes the per-(beam × terminal)
-    // `computeBoresightFrame` allocation that dominated the inner loop.
+    // `computeBoresightFrame` allocation that dominated the inner loop. Only
+    // needed when the geometric computation is enabled (M3: with it off, only
+    // externally-assigned terminals are driven, so no frames are built).
     //
     // Accepted v2 debt (toward the v3 fps gate, NFR-A-01): there is still no
     // static terminal spatial index or per-beam footprint bounding cap, so the
@@ -194,24 +229,34 @@ export class CoverageCalculator {
     // per-(sat, terminal) line-of-sight cull. Those broad-phase structures are
     // intentionally deferred to v3 (architecture-v2 Decision D); v2's bar is
     // correctness at 5k terminals, which this satisfies.
-    const satelliteFrames = this.computeSatelliteFrames(time);
+    const satelliteFrames = this.enabled ? this.computeSatelliteFrames(time) : [];
 
-    for (const terminalId of this.deps.terminalIds()) {
-      const external = assignmentByTerminal.get(terminalId);
-      const covered = external
-        ? this.coveredFromAssignment(external, pairs, terminalId)
-        : this.coveredFromComputation(terminalId, satelliteFrames, pairs);
-
+    // Covered → coveredColor; explicitly uncovered → uncoveredColor (or model
+    // default). A terminal that is neither externally assigned NOR geometrically
+    // evaluated (computation off) is left untouched here and reverts to its
+    // model default via the pass below (FR-A-09a/12d).
+    const applyColor = (terminalId: string, covered: boolean): void => {
       if (covered) {
-        this.deps.setTerminalColor(terminalId, this.config.coveredColor);
+        this.deps.setTerminalColor(terminalId, config.coveredColor);
         nextColored.add(terminalId);
       } else {
-        // Uncovered: explicit uncoveredColor if provided, else model default.
-        this.deps.setTerminalColor(terminalId, this.config.uncoveredColor);
-        if (this.config.uncoveredColor !== undefined) {
+        this.deps.setTerminalColor(terminalId, config.uncoveredColor);
+        if (config.uncoveredColor !== undefined) {
           nextColored.add(terminalId);
         }
       }
+    };
+
+    for (const terminalId of this.deps.terminalIds()) {
+      const external = assignmentByTerminal.get(terminalId);
+      if (external !== undefined) {
+        // External assignment is authoritative for this terminal (FR-A-12a/12c),
+        // whether or not computation is enabled (M3).
+        applyColor(terminalId, this.coveredFromAssignment(external, pairs, terminalId));
+      } else if (this.enabled) {
+        applyColor(terminalId, this.coveredFromComputation(terminalId, satelliteFrames, pairs));
+      }
+      // else: computation off and not assigned → model default (revert pass below).
     }
 
     // Revert terminals colored last tick but not this tick (FR-A-11, FR-A-12d).

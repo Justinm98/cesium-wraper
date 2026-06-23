@@ -147,10 +147,12 @@ export class CesiumRenderingEngine implements RenderingEngine {
     }
     // M5 (review-v2): explicitly tear down the coverage tick listener BEFORE
     // destroying the widget/clock, rather than relying on `widget.destroy()`
-    // implicitly disposing the clock's onTick event. `setEnabled(false)`
-    // removes the registered listener (and reverts recolors / clears link
-    // lines) so no per-tick `recompute()` can survive teardown.
-    this.coverage?.setEnabled(false);
+    // implicitly disposing the clock's onTick event. `destroy()` unconditionally
+    // removes the registered listener (and reverts recolors / clears link lines)
+    // so no per-tick `recompute()` can survive teardown — unlike
+    // `setEnabled(false)`, which may keep a listener alive for a live external
+    // assignment (M3).
+    this.coverage?.destroy();
     // Tear down the beam volumes' per-frame render-loop hook (mirrors the M5
     // coverage teardown) before destroying the widget/scene.
     this.beams?.destroy();
@@ -256,7 +258,16 @@ export class CesiumRenderingEngine implements RenderingEngine {
   setCoverageAssignment(assignment: CoverageAssignment): void {
     this.requireInitialized();
     this.coverageAssignment = assignment;
-    this.coverage?.setAssignment(assignment);
+    // M3 (resolved 2026-06-23): an external assignment is authoritative
+    // regardless of the computation toggle, so a non-empty assignment must apply
+    // even if computation was never enabled — construct the calculator for it.
+    // A beams-only consumer (no assignment, no computation) still constructs
+    // nothing (NFR-A-04): an empty assignment with no existing calculator is a
+    // no-op that leaves the engine lazy.
+    if (this.coverage === undefined && assignment.assignments.length === 0) {
+      return;
+    }
+    this.ensureCoverage().setAssignment(assignment);
   }
 
   clearCoverageAssignment(): void {

@@ -17,7 +17,12 @@ import {
 
 import { BeamDefinition, BeamGeometry } from '../../../core/models/beam.model';
 import { ColorConfig } from '../../../core/models/position.model';
-import { computeBoresightFrame, computeConeModelMatrix } from '../services/coverage-geometry';
+import {
+  computeBoresightFrame,
+  computeConeModelMatrix,
+  groundFootprintRadius,
+  Vec3,
+} from '../services/coverage-geometry';
 
 /**
  * Beam entity ids extend the existing `satellite:` / `terminal:` namespacing so
@@ -306,14 +311,28 @@ export class BeamManager {
   }
 
   /**
-   * The ground footprint outline entity (full opacity, FR-A-04). Its position
-   * tracks the satellite via a render-loop callback (FR-A-05). Circular beams use
-   * equal semi-axes; elliptical beams use semi-axes derived from the two
-   * half-angles, so the elliptical footprint reads as an ellipse.
+   * The ground footprint outline entity (full opacity, FR-A-04). Both its
+   * position AND its semi-axes track the satellite via render-loop callbacks
+   * (FR-A-05): the axes are sized from the satellite's LIVE altitude each frame
+   * ({@link footprintAxes} → {@link groundFootprintRadius}), not a fixed cone
+   * length, so the footprint stays a correctly-sized ground spot as the satellite
+   * moves and never balloons to an un-triangulable Earth-sized ellipse. Circular
+   * beams yield equal semi-axes; elliptical beams yield distinct semi-axes (the
+   * larger half-angle always maps to the major axis, as Cesium requires
+   * semiMajorAxis ≥ semiMinorAxis).
    */
   private buildFootprintEntity(satelliteId: string, beam: BeamDefinition): object {
     const outline = this.resolveColor(beam.color); // full opacity for legibility
-    const { semiMajorAxis, semiMinorAxis } = footprintAxes(beam.geometry);
+    // One live property per axis. With no current position the entity has no
+    // position either, so Cesium skips it and these are not evaluated; 0 is a safe
+    // inert fallback for that frame.
+    const semiAxis = (pick: (axes: FootprintAxes) => number): CallbackProperty =>
+      new CallbackProperty((time) => {
+        const position = this.getSatellitePosition(satelliteId, time);
+        return position === undefined
+          ? 0
+          : pick(footprintAxes(beam.geometry, { x: position.x, y: position.y, z: position.z }));
+      }, false);
     return {
       id: this.entityId(satelliteId, beam.id),
       position: new CallbackProperty(
@@ -321,8 +340,8 @@ export class BeamManager {
         false
       ),
       ellipse: new EllipseGraphics({
-        semiMajorAxis,
-        semiMinorAxis,
+        semiMajorAxis: semiAxis((axes) => axes.semiMajorAxis),
+        semiMinorAxis: semiAxis((axes) => axes.semiMinorAxis),
         fill: false,
         outline: true,
         outlineColor: outline,
@@ -386,23 +405,28 @@ function coneRadii(geometry: BeamGeometry): { azimuthRadius: number; elevationRa
   }
 }
 
-/**
- * Footprint semi-axes (meters) approximated from the half-angle(s) projected
- * over the cone length. Circular → equal axes; elliptical → distinct axes.
- */
-function footprintAxes(geometry: BeamGeometry): {
+/** Footprint ellipse semi-axes (meters); `semiMajorAxis ≥ semiMinorAxis`. */
+interface FootprintAxes {
   semiMajorAxis: number;
   semiMinorAxis: number;
-} {
-  const project = (deg: number): number => CONE_LENGTH * Math.tan(CesiumMath.toRadians(deg));
+}
+
+/**
+ * Footprint semi-axes (meters) for the beam's ground spot, sized from the
+ * satellite's actual altitude at `satelliteEcef` ({@link groundFootprintRadius}).
+ * Circular → equal axes; elliptical → distinct axes. Because the ground radius is
+ * monotonic in the half-angle, the larger half-angle is always the major axis, so
+ * `semiMajorAxis ≥ semiMinorAxis` (Cesium's `EllipseGeometry` requirement) holds.
+ */
+function footprintAxes(geometry: BeamGeometry, satelliteEcef: Vec3): FootprintAxes {
   switch (geometry.kind) {
     case 'circular': {
-      const r = project(geometry.halfAngle);
+      const r = groundFootprintRadius(satelliteEcef, geometry.halfAngle);
       return { semiMajorAxis: r, semiMinorAxis: r };
     }
     case 'elliptical': {
-      const a = project(geometry.azimuthHalfAngle);
-      const b = project(geometry.elevationHalfAngle);
+      const a = groundFootprintRadius(satelliteEcef, geometry.azimuthHalfAngle);
+      const b = groundFootprintRadius(satelliteEcef, geometry.elevationHalfAngle);
       return { semiMajorAxis: Math.max(a, b), semiMinorAxis: Math.min(a, b) };
     }
   }

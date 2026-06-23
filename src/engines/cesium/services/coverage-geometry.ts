@@ -27,6 +27,13 @@ export interface Vec3 {
 const WGS84_A = 6_378_137.0;
 const WGS84_B = 6_356_752.314245;
 
+/**
+ * Mean Earth radius (meters). A spherical approximation is adequate for sizing a
+ * beam's ground footprint — the rendered footprint is itself a planar-ellipse
+ * approximation of the (generally non-elliptical) cone–ellipsoid intersection.
+ */
+const EARTH_MEAN_RADIUS = 6_371_000;
+
 const DEG2RAD = Math.PI / 180;
 
 function sub(a: Vec3, b: Vec3): Vec3 {
@@ -288,4 +295,42 @@ export function computeConeModelMatrix(
     col2.x, col2.y, col2.z, 0,
     t.x,    t.y,    t.z,    1,
   ];
+}
+
+/**
+ * Ground-footprint radius (meters, measured as surface arc from the sub-satellite
+ * point) of a beam half-angle, seen from a satellite at `satelliteEcef`. This is
+ * the size of the ground spot a cone of the given half-angle illuminates — the
+ * value the footprint ellipse's semi-axis should use.
+ *
+ * It must NOT be `tan(halfAngle)` projected over the rendered cone's full length:
+ * that length is chosen so the *volume* spans the globe, not as a slant range to
+ * the ground, and projecting over it yields an Earth-sized ellipse Cesium cannot
+ * triangulate (the footprint-sizing bug). The correct size depends on the
+ * satellite's actual altitude.
+ *
+ * Derivation (spherical Earth, radius `R`, satellite at `D = R + altitude`): a ray
+ * leaving the satellite at angle `α` from nadir meets the sphere where, by the law
+ * of sines, `sin(P) = D·sin(α)/R` at the ground point. The Earth-central angle
+ * from the sub-satellite point to that point is `λ = asin(D·sin(α)/R) − α`, and the
+ * ground arc is `R·λ`. When `α` reaches the Earth's angular radius
+ * (`sin(α) ≥ R/D`) the ray grazes/misses the limb, so the footprint is bounded by
+ * the visible horizon `λ = acos(R/D)`. This bound keeps the radius ≤ a quarter
+ * circumference (~10,000 km) for any beam, so Cesium can always triangulate it.
+ *
+ * Pure — no Cesium; operates on a plain ECEF vector so it is unit-testable.
+ */
+export function groundFootprintRadius(satelliteEcef: Vec3, halfAngleDeg: number): number {
+  const altitude = Math.max(0, length(satelliteEcef) - EARTH_MEAN_RADIUS);
+  const R = EARTH_MEAN_RADIUS;
+  const D = R + altitude;
+  const alpha = halfAngleDeg * DEG2RAD;
+  // Beyond the Earth's angular radius the ray misses the globe → bound by horizon.
+  const horizonCentralAngle = Math.acos(R / D);
+  const sinGround = (D * Math.sin(alpha)) / R;
+  const centralAngle =
+    sinGround >= 1
+      ? horizonCentralAngle
+      : Math.min(Math.max(0, Math.asin(sinGround) - alpha), horizonCentralAngle);
+  return R * centralAngle;
 }

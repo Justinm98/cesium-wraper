@@ -319,6 +319,11 @@ THEN the globe uses that assignment to drive terminal coloring and link lines
 for the named terminals, **instead of** engine-computed coverage for those
 terminals (RESOLVED OQ-3). The external assignment is authoritative for the
 terminals it names.
+*(M3 RESOLVED 2026-06-23 — Option A, see [decisions/m3-external-assignment.md](decisions/m3-external-assignment.md)):*
+this applies **independent of the coverage-computation toggle**. With computation
+disabled the assignment still colors/links its named terminals (unnamed terminals
+stay at their model default and no geometry runs); with computation enabled,
+unnamed terminals fall back to engine computation per FR-A-12b.
 
 **FR-A-12b (engine-computed coverage is the default).**
 GIVEN no external coverage assignment has been supplied for a terminal,

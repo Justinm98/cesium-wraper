@@ -49,10 +49,6 @@ const settle = (ms: number): Promise<number> =>
     setTimeout(() => resolve(maxCommands), ms);
   });
 
-// Small half-angles keep the ground footprint well under the globe scale.
-// (The library's footprintAxes projects tan(halfAngle) over the full CONE_LENGTH,
-// so a wide beam yields an Earth-sized ellipse Cesium cannot triangulate — a
-// pre-existing footprint-sizing issue, orthogonal to the beam VOLUME under test.)
 const circular: BeamDefinition = {
   id: 'b1',
   azimuth: 0,
@@ -65,11 +61,22 @@ const elliptical: BeamDefinition = {
   elevation: 90,
   geometry: { kind: 'elliptical', azimuthHalfAngle: 3, elevationHalfAngle: 1 },
 };
+// A wide beam — the case the footprint-sizing bug crashed on. Footprint axes are
+// now sized from the satellite's altitude and clamped to the visible horizon, so
+// even an 80° beam yields a ground ellipse Cesium can triangulate (regression
+// guard for the bug the M2 harness originally surfaced).
+const wide: BeamDefinition = {
+  id: 'b1',
+  azimuth: 0,
+  elevation: 90,
+  geometry: { kind: 'circular', halfAngle: 80 },
+};
 
 const api = {
   errors: (): string[] => errors,
   setCircular: (): void => beams.syncBeams('s1', [circular]),
   setElliptical: (): void => beams.syncBeams('s1', [elliptical]),
+  setWide: (): void => beams.syncBeams('s1', [wide]),
   showVolumes: (visible: boolean): void => beams.setVolumesVisible(visible),
   clear: (): void => beams.syncBeams('s1', []),
   settle,

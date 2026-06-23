@@ -7,6 +7,11 @@ No phase may be skipped; no coding begins before Requirements **and** Architectu
 for that release are approved by the user (final authority — see
 [decisions/agent-charter.md](decisions/agent-charter.md)).
 
+**Demo deliverable (CLAUDE.md Workflow Rule 4):** every feature/version updates
+`examples/demo-app` to exercise the new capability through the library's public
+API. This is part of the Implementation phase, verified at the Testing/QA gate,
+and PM-gated — a feature is not "done" without a working, documented demo.
+
 ---
 
 ## Release timeline
@@ -67,8 +72,8 @@ lint clean, green build):
 | **Requirements** | ✅ **Approved 2026-06-20** | Done — see [requirements-v2.md](requirements-v2.md) (APPROVED; all OQs resolved) |
 | **Architecture** | ✅ **Approved 2026-06-20** | Done — see [architecture-v2.md](architecture-v2.md) (APPROVED); deltas folded into [architecture.md](architecture.md) header |
 | **Implementation** | ✅ **Complete 2026-06-20** | Done — PM-verified: tsc clean, lint clean, **191/191 tests** (+90), ~97.7% stmt / 94.9% branch coverage, ng-packagr build green |
-| **Testing / QA** | 🟡 **In progress** | QA review (docs/review-v2.md). The real-Cesium Playwright/WebGL smoke test (NFR-A-03) is **built & green** (2026-06-21, [smoke/](smoke/)); review-v2 blockers H1/M1 resolved, M2 met. Remaining: M3 decision + the footprint-sizing fix surfaced by the smoke test. |
-| Review | ⚪ Not started | — |
+| **Testing / QA** | ✅ **Complete 2026-06-23** | QA review (docs/review-v2.md). Real-Cesium smoke test (NFR-A-03) built & green ([smoke/](smoke/)); review-v2 blockers H1/M1 resolved, M2 met, M4/M5 done; **M3 resolved** (Option A — external assignment applies standalone; [decisions/m3-external-assignment.md](decisions/m3-external-assignment.md)); the **footprint-sizing** bug the smoke test surfaced is fixed. 230 unit tests + 4 smoke green, ~98.4% stmt / ~96.3% branch. |
+| Review | 🟡 **Ready to start** | — |
 
 **Implementation outcome (2026-06-20):** New engine internals
 `beam.manager.ts`, `link-line.manager.ts`, `coverage-calculator.ts`, pure-math

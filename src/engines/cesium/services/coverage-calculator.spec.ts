@@ -101,14 +101,16 @@ describe('CoverageCalculator', () => {
       expect(deps.colors.get('t1')).toEqual({ r: 0, g: 255, b: 0, a: 1 });
     });
 
-    it('reverts recolor and unsubscribes on disable (FR-A-09b)', () => {
-      calc.setConfig(config());
+    it('reverts recolor, removes link lines, and unsubscribes on disable (FR-A-09b)', () => {
+      calc.setConfig(config({ showLinkLines: true }));
       calc.setEnabled(true);
+      expect(deps.linkPairs).toHaveLength(1);
+
       calc.setEnabled(false);
 
       expect(listenerCount()).toBe(0);
       expect(deps.colors.get('t1')).toBeUndefined();
-      expect(deps.cleared).toBe(true);
+      expect(deps.linkPairs).toHaveLength(0);
     });
 
     it('is idempotent on repeated enable/disable', () => {
@@ -116,6 +118,23 @@ describe('CoverageCalculator', () => {
       calc.setEnabled(true);
       calc.setEnabled(true);
       expect(listenerCount()).toBe(1);
+    });
+
+    it('destroy() unsubscribes and reverts even with a live external assignment (M3)', () => {
+      calc.setConfig(config({ showLinkLines: true }));
+      calc.setAssignment({
+        assignments: [{ terminalId: 't1', links: [{ satelliteId: 'ext-sat' }] }],
+      });
+      expect(listenerCount()).toBe(1);
+      expect(deps.colors.get('t1')).toEqual(config().coveredColor);
+
+      calc.destroy();
+
+      // Unlike setEnabled(false), destroy drops the assignment too — nothing
+      // survives teardown (review-v2 M5).
+      expect(listenerCount()).toBe(0);
+      expect(deps.colors.get('t1')).toBeUndefined();
+      expect(deps.cleared).toBe(true);
     });
   });
 
@@ -259,24 +278,65 @@ describe('CoverageCalculator', () => {
       expect(deps.colors.get('t2')).toEqual(config().coveredColor); // external
     });
 
-    it('applies nothing while computation is disabled (M3 — documents as-built)', () => {
-      // User decision (review-v2 M3): external assignment is applied only while
-      // computation is ENABLED. With computation off, the assignment is stored
-      // but inert — no terminal is colored and no link line is drawn.
-      deps.terminals.set('t1', FAR_SIDE); // geometrically uncovered too
+    it('applies an external assignment while computation is DISABLED (M3 — standalone)', () => {
+      // Resolved 2026-06-23 (Option A): an external assignment is authoritative
+      // regardless of the computation toggle. With computation OFF it still
+      // colors and links its named terminals; geometry is not run.
+      deps.terminals.set('t1', FAR_SIDE); // geometrically uncovered — only the assignment can color it
       calc.setConfig(config({ showLinkLines: true }));
       calc.setAssignment({
         assignments: [{ terminalId: 't1', links: [{ satelliteId: 'ext-sat' }] }],
       });
 
       expect(calc.isEnabled).toBe(false);
-      expect(deps.colors.get('t1')).toBeUndefined();
-      expect(deps.linkPairs).toHaveLength(0);
-
-      // Enabling later applies the already-stored assignment.
-      calc.setEnabled(true);
+      // The non-empty assignment subscribes to the tick on its own (M3) so it
+      // keeps tracking scene changes even with computation disabled.
+      expect(listenerCount()).toBe(1);
       expect(deps.colors.get('t1')).toEqual(config().coveredColor);
       expect(deps.linkPairs).toEqual([{ satelliteId: 'ext-sat', terminalId: 't1' }]);
+    });
+
+    it('defers an assignment supplied before any config until config arrives', () => {
+      // Coloring needs CoverageConfig.coveredColor, so an assignment set before
+      // config is a harmless no-op (no throw, no color) until setConfig lands.
+      calc.setAssignment({
+        assignments: [{ terminalId: 't1', links: [{ satelliteId: 'ext-sat' }] }],
+      });
+      expect(deps.colors.get('t1')).toBeUndefined();
+
+      calc.setConfig(config());
+      expect(deps.colors.get('t1')).toEqual(config().coveredColor);
+    });
+
+    it('drives ONLY assigned terminals while disabled, leaving others at model default (M3)', () => {
+      deps.terminals.set('t2', SURFACE_BELOW); // would be geometrically covered if computation ran
+      calc.setConfig(config());
+      calc.setAssignment({
+        assignments: [{ terminalId: 't1', links: [{ satelliteId: 'ext-sat' }] }],
+      });
+
+      expect(calc.isEnabled).toBe(false);
+      expect(deps.colors.get('t1')).toEqual(config().coveredColor); // assigned
+      // t2 is not assigned and computation is off → untouched (model default),
+      // even though it sits under the beam. No geometry runs.
+      expect(deps.colors.get('t2')).toBeUndefined();
+    });
+
+    it('releases the tick and reverts when the assignment is cleared while disabled (M3, FR-A-12d)', () => {
+      calc.setConfig(config({ showLinkLines: true }));
+      calc.setAssignment({
+        assignments: [{ terminalId: 't1', links: [{ satelliteId: 'ext-sat' }] }],
+      });
+      expect(deps.colors.get('t1')).toEqual(config().coveredColor);
+      expect(listenerCount()).toBe(1);
+
+      calc.clearAssignment();
+
+      // Computation off and no assignment → fully idle: terminal reverts to model
+      // default, link lines removed, tick listener released (NFR-A-04).
+      expect(deps.colors.get('t1')).toBeUndefined();
+      expect(deps.linkPairs).toHaveLength(0);
+      expect(listenerCount()).toBe(0);
     });
 
     it('de-dups identical links per terminal so no redundant pairs are emitted (L4)', () => {

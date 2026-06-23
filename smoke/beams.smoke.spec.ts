@@ -23,6 +23,7 @@ type Smoke = {
   errors(): string[];
   setCircular(): void;
   setElliptical(): void;
+  setWide(): void;
   showVolumes(visible: boolean): void;
   clear(): void;
   settle(ms: number): Promise<number>;
@@ -53,6 +54,23 @@ test('beams + footprint render in real Cesium (global.Math browser-safety, footp
     // browser — building geometry, the footprint ellipse, the orientation frame —
     // which is exactly the path the `global.Math` bug crashed.
     s.setCircular();
+    const commands = await s.settle(2500);
+    return { commands, errors: s.errors() };
+  });
+  expect(result.errors).toEqual([]);
+  expect(result.commands).toBeGreaterThan(0);
+});
+
+test('a wide beam footprint triangulates in real Cesium (footprint-sizing fix)', async ({
+  page,
+}) => {
+  // Regression guard: an 80° beam previously sized its footprint by projecting
+  // tan(halfAngle) over the 50,000 km cone length, yielding an Earth-sized ellipse
+  // that threw in Cesium's geometry pipeline. The footprint is now sized from the
+  // satellite's altitude and clamped to the horizon, so it must render cleanly.
+  const result = await page.evaluate(async () => {
+    const s = window.__smoke;
+    s.setWide();
     const commands = await s.settle(2500);
     return { commands, errors: s.errors() };
   });

@@ -61,9 +61,12 @@ export class CesiumGlobeComponent implements OnInit, OnChanges, OnDestroy {
   @Input() coverageComputationEnabled = false;
   /**
    * External terminal→beam coverage assignments overriding computation
-   * (FR-A-12a). Applied only while {@link coverageComputationEnabled} is `true`
-   * (M3, review-v2 — user decision): with computation off the assignment is
-   * stored but inert (nothing colored or linked). Unknown ids are ignored (L5).
+   * (FR-A-12a). Authoritative for the terminals it names **regardless of
+   * {@link coverageComputationEnabled}** (M3, resolved 2026-06-23 — Option A):
+   * with computation off, the named terminals are still colored/linked from the
+   * assignment and unnamed terminals stay at their model default (no geometry
+   * runs); with computation on, unnamed terminals fall back to engine
+   * computation (FR-A-12b). Unknown ids are ignored (L5).
    */
   @Input() coverageAssignment?: CoverageAssignment;
   /**

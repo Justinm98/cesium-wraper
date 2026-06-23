@@ -18,6 +18,15 @@ documented debt or with a follow-up.
 > Node-only `global.Math` that crashed in the browser, and surfaced a pre-existing
 > footprint over-sizing bug (still open). Open: **M3** (one-line decision) and the
 > footprint sizing. Unit suite 217 green, ~97.9% stmt / ~95.1% branch; smoke 3 green.
+>
+> **Update 2026-06-23:** **M3 resolved** — Option A (external assignment applies
+> standalone, independent of the computation toggle; see
+> [decisions/m3-external-assignment.md](decisions/m3-external-assignment.md), FR-A-12a
+> clarified). The **footprint-sizing** bug is **fixed** — semi-axes are now sized from
+> the satellite's live altitude and clamped to the horizon (pure `groundFootprintRadius`
+> helper), with a wide-beam (80°) real-Cesium regression smoke test. All blockers and
+> recommended items (H1, M1, M2, M3, M4, M5) are closed. Unit suite 230 green,
+> ~98.4% stmt / ~96.3% branch; smoke 4 green. **v2 is ready for the Review gate.**
 
 **Date:** 2026-06-20
 **Reviewer:** QA / Security Reviewer agent

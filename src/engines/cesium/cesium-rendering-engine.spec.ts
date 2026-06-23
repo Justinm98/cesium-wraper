@@ -296,14 +296,41 @@ describe('CesiumRenderingEngine', () => {
         showLinkLines: true,
       });
       engine.setLinkLinesVisible(false); // imperative override before enable
+      // A non-empty assignment constructs the calculator on its own now (M3), so
+      // it is restored along with the earlier config/override.
       engine.setCoverageAssignment({
         assignments: [{ terminalId: 't1', links: [{ satelliteId: 'iss' }] }],
       });
 
-      // Enabling now must construct and restore all prior state without throwing.
+      // Enabling must restore all prior state without throwing.
       expect(() => engine.setCoverageComputationEnabled(true)).not.toThrow();
       const onTick = widget().clock as unknown as { onTick: { listenerCount: number } };
       expect(onTick.onTick.listenerCount).toBe(1);
+    });
+
+    it('applies a non-empty assignment with computation never enabled (M3 — standalone)', () => {
+      engine.addSatellite({ id: 'iss', tle: ISS_TLE, beams: [beam] });
+      engine.addTerminal({ id: 't1', position: { latitude: 0, longitude: 0, altitude: 0 } });
+      engine.setCoverageConfig({ coveredColor: { r: 0, g: 255, b: 0, a: 1 }, showLinkLines: false });
+      const onTick = widget().clock as unknown as { onTick: { listenerCount: number } };
+      // Config alone constructs nothing while computation is off.
+      expect(onTick.onTick.listenerCount).toBe(0);
+
+      // A non-empty external assignment is authoritative regardless of the toggle
+      // (M3, Option A): it constructs the calculator and subscribes, even though
+      // computation was never enabled.
+      engine.setCoverageAssignment({
+        assignments: [{ terminalId: 't1', links: [{ satelliteId: 'iss' }] }],
+      });
+      expect(onTick.onTick.listenerCount).toBe(1);
+    });
+
+    it('stays lazy for an empty assignment when computation was never enabled (NFR-A-04)', () => {
+      engine.setCoverageConfig({ coveredColor: { r: 0, g: 255, b: 0, a: 1 }, showLinkLines: false });
+      const onTick = widget().clock as unknown as { onTick: { listenerCount: number } };
+      // An empty assignment with no existing calculator constructs nothing.
+      engine.setCoverageAssignment({ assignments: [] });
+      expect(onTick.onTick.listenerCount).toBe(0);
     });
 
     it('requires initialization for the new coverage methods', () => {
@@ -364,7 +391,7 @@ describe('CesiumRenderingEngine', () => {
 
       // The mock widget.destroy() does NOT clear the clock's onTick listeners,
       // so a zero count here proves destroy() explicitly tore the listener down
-      // (via coverage.setEnabled(false)) rather than relying on clock disposal.
+      // (via coverage.destroy()) rather than relying on clock disposal.
       engine.destroy();
       expect(onTick.onTick.listenerCount).toBe(0);
     });

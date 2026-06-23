@@ -16,11 +16,21 @@ interface MockColor {
   alpha: number;
 }
 
+/** Live (callback) numeric property — beam footprint semi-axes are sized per-frame. */
+interface MockNumberProperty {
+  getValue(time: JulianDate | undefined): number;
+}
+
 interface MockFootprint {
   id: string;
   position: { getValue(time: JulianDate | undefined): Cartesian3 | undefined };
   ellipse: {
-    options: { semiMajorAxis: number; semiMinorAxis: number; outlineColor: MockColor; fill: boolean };
+    options: {
+      semiMajorAxis: MockNumberProperty;
+      semiMinorAxis: MockNumberProperty;
+      outlineColor: MockColor;
+      fill: boolean;
+    };
   };
 }
 
@@ -74,6 +84,16 @@ describe('BeamManager', () => {
     manager = new BeamManager(entities, scene, 10, () => SAT_POS);
   });
 
+  // Footprint semi-axes are live (callback) properties sized from the satellite's
+  // current altitude each frame; read their value at the SAT_POS the manager sees.
+  const axes = (satId: string, beamId: string): { major: number; minor: number } => {
+    const e = footprint(satId, beamId);
+    return {
+      major: e.ellipse.options.semiMajorAxis.getValue(undefined),
+      minor: e.ellipse.options.semiMinorAxis.getValue(undefined),
+    };
+  };
+
   it('renders a circular beam: a namespaced footprint entity + a volume primitive', () => {
     manager.syncBeams('s1', [circular('b1')]);
 
@@ -81,15 +101,53 @@ describe('BeamManager', () => {
     expect(entity).toBeDefined();
     expect(entity.ellipse).toBeDefined();
     expect(scene.primitives.length).toBe(1);
-    // Circular footprint has equal semi-axes.
-    expect(entity.ellipse.options.semiMajorAxis).toBe(entity.ellipse.options.semiMinorAxis);
+    // Circular footprint has equal, positive semi-axes.
+    const { major, minor } = axes('s1', 'b1');
+    expect(major).toBe(minor);
+    expect(major).toBeGreaterThan(0);
   });
 
   it('renders an elliptical beam with distinct footprint semi-axes (FR-A-01b)', () => {
     manager.syncBeams('s1', [elliptical('b1')]);
 
-    const entity = footprint('s1', 'b1');
-    expect(entity.ellipse.options.semiMajorAxis).not.toBe(entity.ellipse.options.semiMinorAxis);
+    const { major, minor } = axes('s1', 'b1');
+    expect(major).not.toBe(minor);
+    // The larger half-angle maps to the major axis (Cesium needs major ≥ minor).
+    expect(major).toBeGreaterThan(minor);
+  });
+
+  it('sizes the footprint from altitude and bounds even a very wide beam to the horizon', () => {
+    // Regression guard for the footprint-sizing bug: projecting tan(halfAngle) over
+    // the rendered cone length (50,000 km) produced an Earth-sized ellipse Cesium
+    // could not triangulate. The radius must be sized from the satellite's altitude
+    // and clamped to the visible horizon, so it stays well under a quarter
+    // circumference (~10,000 km) for ANY half-angle.
+    const altitude = Cartesian3.magnitude(SAT_POS) - 6_371_000; // ~629 km above mean radius
+    manager.syncBeams('s1', [
+      circular('narrow', { geometry: { kind: 'circular', halfAngle: 5 } }),
+      circular('wide', { geometry: { kind: 'circular', halfAngle: 80 } }),
+    ]);
+
+    const narrow = axes('s1', 'narrow').major;
+    const wide = axes('s1', 'wide').major;
+    // Narrow nadir spot ≈ altitude·tan(halfAngle) (first-order); bounded, not 50,000 km·tan.
+    expect(narrow).toBeLessThan(altitude); // ~55 km, far below the old tan-over-cone value
+    expect(wide).toBeGreaterThan(narrow);
+    // The horizon bound keeps even an 80° beam triangulable.
+    expect(wide).toBeLessThan(10_000_000);
+  });
+
+  it('sizes the footprint to an inert 0 while the satellite has no position', () => {
+    let position: Cartesian3 | undefined = SAT_POS;
+    manager.destroy();
+    manager = new BeamManager(entities, scene, 10, () => position);
+    manager.syncBeams('s1', [circular('b1')]);
+
+    // With a position the axis is positive; with none, Cesium skips the entity, so
+    // the callback returns a harmless 0 rather than a value that would throw.
+    expect(axes('s1', 'b1').major).toBeGreaterThan(0);
+    position = undefined;
+    expect(axes('s1', 'b1').major).toBe(0);
   });
 
   it('positions the footprint from the satellite accessor (no re-propagation, FR-A-05)', () => {
@@ -117,6 +175,16 @@ describe('BeamManager', () => {
     position = undefined;
     renderFrame();
     expect(volume.show).toBe(false);
+  });
+
+  it('points an elliptical beam volume each frame (distinct cone radii, M1)', () => {
+    manager.setVolumesVisible(true);
+    manager.syncBeams('s1', [elliptical('b1')]);
+
+    renderFrame();
+    const volume = volumes()[0];
+    expect(volume.show).toBe(true);
+    expect(volume.modelMatrix?.values).toHaveLength(16);
   });
 
   it('applies the default cyan fill and 0.3 opacity when omitted (FR-A-03/04)', () => {

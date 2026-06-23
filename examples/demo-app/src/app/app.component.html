@@ -89,6 +89,40 @@
         }
       </div>
     </rux-card>
+
+    <rux-card>
+      <div slot="header">Beams &amp; Coverage</div>
+      <ul class="entity-list">
+        <li>
+          <span class="entity-label">Beam volumes</span>
+          <rux-switch
+            [attr.checked]="showBeamVolumes ? '' : null"
+            (ruxchange)="toggleBeamVolumes()"
+          ></rux-switch>
+        </li>
+        <li>
+          <span class="entity-label">Coverage computation</span>
+          <rux-switch
+            [attr.checked]="coverageEnabled ? '' : null"
+            (ruxchange)="toggleCoverage()"
+          ></rux-switch>
+        </li>
+        <li>
+          <span class="entity-label">Link lines</span>
+          <rux-switch
+            [attr.checked]="coverageConfig.showLinkLines ? '' : null"
+            (ruxchange)="toggleLinkLines()"
+          ></rux-switch>
+        </li>
+        <li>
+          <span class="entity-label">External feed (force DC covered)</span>
+          <rux-switch
+            [attr.checked]="externalFeedOn ? '' : null"
+            (ruxchange)="toggleExternalFeed()"
+          ></rux-switch>
+        </li>
+      </ul>
+    </rux-card>
   </aside>
 
   <section class="globe-host">
@@ -97,6 +131,10 @@
       [terminals]="terminals"
       [timeConfig]="timeConfig"
       [globeConfig]="globeConfig"
+      [coverageConfig]="coverageConfig"
+      [coverageComputationEnabled]="coverageEnabled"
+      [coverageAssignment]="coverageAssignment"
+      [showBeamVolumes]="showBeamVolumes"
       (initError)="onInitError($event)"
     />
   </section>

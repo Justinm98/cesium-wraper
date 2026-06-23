@@ -4,6 +4,7 @@ import {
   computeBoresightFrame,
   computeBoresightOffsets,
   computeConeModelMatrix,
+  groundFootprintRadius,
   hasLineOfSight,
   isInsideBeam,
   Vec3,
@@ -283,6 +284,45 @@ describe('coverage-geometry', () => {
 
     it('treats coincident satellite/terminal as line-of-sight (degenerate)', () => {
       expect(hasLineOfSight(SAT, { ...SAT })).toBe(true);
+    });
+  });
+
+  describe('groundFootprintRadius', () => {
+    const R = 6_371_000; // EARTH_MEAN_RADIUS (mirrors the implementation constant)
+    // Satellites at three regimes, straight up the +X axis (altitude = |pos| − R).
+    const leo: Vec3 = { x: R + 600_000, y: 0, z: 0 };
+    const geo: Vec3 = { x: R + 35_786_000, y: 0, z: 0 };
+
+    it('matches the flat-Earth small-angle approximation (altitude·tan α) for a narrow beam', () => {
+      const altitude = 600_000;
+      const halfAngle = 2;
+      const expected = altitude * Math.tan((halfAngle * Math.PI) / 180);
+      // Within ~1% of the first-order approximation for a narrow nadir beam.
+      expect(groundFootprintRadius(leo, halfAngle)).toBeCloseTo(expected, -2);
+    });
+
+    it('increases monotonically with the half-angle', () => {
+      const r1 = groundFootprintRadius(leo, 5);
+      const r2 = groundFootprintRadius(leo, 15);
+      const r3 = groundFootprintRadius(leo, 30);
+      expect(r2).toBeGreaterThan(r1);
+      expect(r3).toBeGreaterThan(r2);
+    });
+
+    it('bounds a beam wider than the Earth disk to the visible horizon', () => {
+      // From LEO the Earth's angular radius is ~66°; an 85° beam overshoots the
+      // limb and must clamp to the horizon arc, NOT diverge.
+      const horizon = R * Math.acos(R / (R + 600_000));
+      expect(groundFootprintRadius(leo, 85)).toBeCloseTo(horizon, 0);
+      // And never exceeds a quarter circumference, so Cesium can always triangulate.
+      expect(groundFootprintRadius(geo, 89)).toBeLessThan((Math.PI / 2) * R);
+    });
+
+    it('is far smaller than projecting tan(halfAngle) over the rendered cone length (the bug)', () => {
+      const CONE_LENGTH = 50_000_000;
+      const halfAngle = 10;
+      const buggy = CONE_LENGTH * Math.tan((halfAngle * Math.PI) / 180);
+      expect(groundFootprintRadius(leo, halfAngle)).toBeLessThan(buggy);
     });
   });
 

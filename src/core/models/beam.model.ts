@@ -20,14 +20,13 @@ export interface CircularBeamGeometry {
  * {@link CircularBeamGeometry.halfAngle} so that an elliptical beam whose two
  * half-angles are equal collapses to the circular case.
  *
- * v2 rendering note (M1, review-v2 — user decision: footprint-only for v2):
- * the FOOTPRINT outline and the COVERAGE COMPUTATION are TRULY elliptical (the
- * ground ellipse uses the two distinct half-angles, and the covered test is an
- * exact elliptical-cone surface test — see {@link ../engines/cesium/services/coverage-geometry}).
- * The solid translucent VOLUME, however, renders in v2 as a bounding
- * radially-symmetric cone sized by the LARGER half-angle, not a true elliptical
- * cone. A true elliptical-cone volume primitive is explicitly deferred past v2
- * (architecture-v2 OQ-3); this is a documented limitation, not hidden magic.
+ * v2 rendering note (M1, review-v2 — resolved): the FOOTPRINT outline, the
+ * COVERAGE COMPUTATION, and the solid translucent VOLUME are all TRULY
+ * elliptical. The ground ellipse uses the two distinct half-angles; the covered
+ * test is an exact elliptical-cone surface test; and the volume is rendered as a
+ * local-space unit cone placed by a non-uniform `modelMatrix`, i.e. a true
+ * elliptical cone (not a radially-symmetric approximation). See
+ * {@link ../engines/cesium/services/coverage-geometry}.
  */
 export interface EllipticalBeamGeometry {
   /** Discriminator selecting the elliptical-cone geometry. */

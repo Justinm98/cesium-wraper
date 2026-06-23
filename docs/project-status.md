@@ -33,13 +33,39 @@ Done 2026-06-21:
   threw in Cesium's `splitLongitude` — fixed by the M1 primitive (object-space
   geometry is not world-split).
 
-Remaining before the Review gate:
-- **M3 (decision).** Should an external coverage assignment apply while
-  computation is disabled? One-line product call + doc (no code blocker).
-- **Footprint sizing (new, found by M2).** `footprintAxes` projects `tan(halfAngle)`
-  over the full 50,000 km cone length, so a wide beam yields an Earth-sized ground
-  ellipse that Cesium cannot triangulate. Pre-existing, orthogonal to M1; not yet
-  fixed (deferred by decision 2026-06-21).
+Done 2026-06-23:
+- **Footprint sizing (found by M2) — fixed.** `footprintAxes` no longer projects
+  `tan(halfAngle)` over the 50,000 km cone length (that length sizes the *volume*
+  cone, not the slant range to the ground). The footprint semi-axes are now sized
+  from the satellite's **live altitude** per frame via the pure, spherical
+  `groundFootprintRadius` helper and **clamped to the visible horizon**, so any
+  beam — including wide ones — yields a ground ellipse Cesium can triangulate. New
+  unit tests for the helper (monotonic, small-angle ≈ altitude·tan, horizon bound)
+  and a **wide-beam (80°) real-Cesium smoke test** (regression guard) were added.
+- **M3 — resolved (Option A: external assignment applies standalone).** An
+  external coverage assignment now drives its named terminals **regardless of the
+  computation toggle**; with computation off, only assigned terminals are colored/
+  linked and no geometry runs. The engine constructs the calculator lazily for a
+  non-empty assignment (beams-only stays lazy, NFR-A-04), and a dedicated
+  `CoverageCalculator.destroy()` tears the tick listener down unconditionally
+  (preserves M5). Requirements FR-A-12a clarified; decision recorded in
+  [decisions/m3-external-assignment.md](decisions/m3-external-assignment.md).
+
+- **Example demo updated for v2 (Workflow Rule 4).** `examples/demo-app` now
+  exercises beams (circular + elliptical via `SatelliteConfig.beams`), the beam-
+  volume toggle, coverage computation + recolor, link lines, and an external
+  coverage feed (demonstrating M3) — all through the public `@Input()` surface.
+  Verified to build against the freshly-built library. Stale public TSDoc that
+  predated the M1/M3 fixes (`beam.model` elliptical-volume note, the
+  `coverageAssignment` `@Input()`) was corrected to match shipped behavior.
+- **Process:** "update the example demo with every feature/version" is now a
+  standing workflow rule — [CLAUDE.md](../CLAUDE.md) Rule 4, wired into the
+  implementation-engineer / qa-engineer / project-manager agent charters and the
+  roadmap process.
+
+All review-v2 blockers (H1, M1) and strongly-recommended items (M2, M3, M4, M5)
+are now closed; the footprint-sizing bug M2 surfaced is fixed; the demo reflects
+v2. **v2 Epic A is ready for the Review gate.**
 
 See [roadmap.md](roadmap.md) and [review-v2.md](review-v2.md).
 
@@ -49,9 +75,9 @@ See [roadmap.md](roadmap.md) and [review-v2.md](review-v2.md).
 
 | Signal | State |
 |---|---|
-| Tests (unit, jest) | 217 passing, 12 suites (verified 2026-06-21) |
-| Coverage | ~97.88% statements / ~95.12% branches (threshold 90%; verified 2026-06-21) |
-| Smoke (real Cesium, Playwright) | 3 passing — headless WebGL2 via SwiftShader; `npm run test:smoke` (NFR-A-03) |
+| Tests (unit, jest) | 230 passing, 12 suites (verified 2026-06-23) |
+| Coverage | ~98.36% statements / ~96.31% branches (threshold 90%; verified 2026-06-23) |
+| Smoke (real Cesium, Playwright) | 4 passing — headless WebGL2 via SwiftShader; `npm run test:smoke` (NFR-A-03) |
 | Lint | Clean (`angular-eslint` + `typescript-eslint` flat config) |
 | Build | `ng-packagr` produces a publishable package (FESM2022, types, assets) |
 | `tsc --noEmit` (strict, incl. specs) | Clean |
