@@ -1,0 +1,25 @@
+<!doctype html>
+<html>
+  <head>
+    <meta charset="utf-8" />
+    <title>cesium-wrapper smoke</title>
+    <style>
+      html,
+      body {
+        margin: 0;
+      }
+      #cesium {
+        width: 640px;
+        height: 480px;
+      }
+    </style>
+    <script>
+      // Cesium loads its Workers/Assets relative to this base URL.
+      window.CESIUM_BASE_URL = './';
+    </script>
+  </head>
+  <body>
+    <div id="cesium"></div>
+    <script src="./bundle.js"></script>
+  </body>
+</html>

@@ -1,0 +1,6 @@
+# Code owners for this repository.
+# The last matching pattern takes precedence.
+# @Justinm98 owns everything, so all changes require their review.
+# See: https://docs.github.com/en/repositories/managing-your-repositorys-settings-and-features/customizing-your-repository/about-code-owners
+
+* @Justinm98

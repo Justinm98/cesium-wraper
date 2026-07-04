@@ -1,6 +1,7 @@
 import { Observable } from 'rxjs';
 
 import { CoverageConfig } from '../models/coverage.model';
+import { CoverageAssignment } from '../models/coverage-assignment.model';
 import { CustomEntityConfig } from '../models/custom-entity.model';
 import { EntityEvent, TerminalPlacedEvent } from '../models/events.model';
 import { GlobeConfig } from '../models/globe-config.model';
@@ -58,6 +59,56 @@ export interface RenderingEngine {
 
   /** Shows or hides satellite-to-terminal link lines. */
   setLinkLinesVisible(visible: boolean): void;
+
+  /**
+   * Enables or disables coverage **computation** at runtime (FR-A-09a/09b).
+   * Default: disabled — beams still render (FR-A-01), but no terminal is
+   * recolored, no covered set is computed, and no link line is drawn until
+   * this is enabled. Disabling reverts all coverage recoloring and removes
+   * engine-drawn link lines within one clock tick, while beams keep rendering.
+   *
+   * Orthogonal to {@link setCoverageConfig} (colors/policy) and
+   * {@link setLinkLinesVisible} (line visibility) — three distinct axes.
+   */
+  setCoverageComputationEnabled(enabled: boolean): void;
+
+  /**
+   * Supplies/replaces external coverage assignments (FR-A-12a). Wholesale
+   * replace, not a delta — the payload is the complete authoritative set. The
+   * named terminals are colored/linked exactly as declared, overriding engine
+   * computation per-terminal with no merge (FR-A-12c).
+   *
+   * Requires computation ENABLED (M3, review-v2 — user decision, kept
+   * as-built): an assignment is applied only while
+   * {@link setCoverageComputationEnabled}(true). With computation off the
+   * assignment is stored but INERT — nothing is colored or linked until
+   * computation is enabled. There is no error in that case.
+   *
+   * Unknown ids are silently ignored (L5, review-v2): an assignment naming a
+   * `terminalId` not in the scene is a no-op, and a `satelliteId` link to a
+   * non-existent satellite draws no visible line. No error or warning is raised.
+   */
+  setCoverageAssignment(assignment: CoverageAssignment): void;
+
+  /**
+   * Clears all external assignments (FR-A-12d). Equivalent to
+   * `setCoverageAssignment({ assignments: [] })`. Affected terminals revert
+   * within one clock tick to engine computation (if enabled) or to their
+   * model-default appearance.
+   */
+  clearCoverageAssignment(): void;
+
+  /**
+   * Shows or hides the translucent solid beam VOLUMES globally (FR-A-01d).
+   * Default OFF — until enabled, a configured beam shows only its ground
+   * footprint outline, not its solid cone. A per-beam `showVolume` on a
+   * `BeamDefinition` overrides this global for that beam (explicit per-beam
+   * wins; an undefined `showVolume` inherits this value).
+   *
+   * Purely visual: independent of coverage computation, link lines, and the
+   * footprint outline (which always renders).
+   */
+  setBeamVolumesVisible(visible: boolean): void;
 
   /** Emits when the end user clicks a 3D model. */
   readonly entityClick$: Observable<EntityEvent>;

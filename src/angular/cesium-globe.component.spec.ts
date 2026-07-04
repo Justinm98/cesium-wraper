@@ -231,6 +231,68 @@ describe('CesiumGlobeComponent', () => {
 
       expect(engine.setTimeConfig).not.toHaveBeenCalled();
     });
+
+    it('forwards coverageComputationEnabled changes (FR-A-09b)', () => {
+      fixture.componentRef.setInput('coverageComputationEnabled', true);
+      fixture.detectChanges();
+
+      expect(engine.setCoverageComputationEnabled).toHaveBeenCalledWith(true);
+    });
+
+    it('forwards a coverageAssignment, and clears it when set back to undefined (FR-A-12)', () => {
+      const assignment = { assignments: [{ terminalId: 't1', links: [{ satelliteId: 's1' }] }] };
+      fixture.componentRef.setInput('coverageAssignment', assignment);
+      fixture.detectChanges();
+      expect(engine.setCoverageAssignment).toHaveBeenCalledWith(assignment);
+
+      fixture.componentRef.setInput('coverageAssignment', undefined);
+      fixture.detectChanges();
+      expect(engine.clearCoverageAssignment).toHaveBeenCalled();
+    });
+
+    it('forwards showBeamVolumes changes (FR-A-01d)', () => {
+      fixture.componentRef.setInput('showBeamVolumes', true);
+      fixture.detectChanges();
+
+      expect(engine.setBeamVolumesVisible).toHaveBeenCalledWith(true);
+    });
+  });
+
+  describe('coverage inputs applied at init', () => {
+    it('applies coverage config, assignment, and enablement bound before ready', async () => {
+      configure();
+      const assignment = { assignments: [{ terminalId: 't1', links: [] }] };
+      fixture.componentRef.setInput('coverageConfig', {
+        coveredColor: { r: 0, g: 255, b: 0, a: 1 },
+        showLinkLines: false,
+      });
+      fixture.componentRef.setInput('coverageAssignment', assignment);
+      fixture.componentRef.setInput('coverageComputationEnabled', true);
+      await init();
+
+      expect(engine.setCoverageConfig).toHaveBeenCalled();
+      expect(engine.setCoverageAssignment).toHaveBeenCalledWith(assignment);
+      expect(engine.setCoverageComputationEnabled).toHaveBeenCalledWith(true);
+    });
+
+    it('leaves coverage computation off by default (FR-A-09a)', async () => {
+      configure();
+      await init();
+      expect(engine.setCoverageComputationEnabled).not.toHaveBeenCalled();
+    });
+
+    it('applies showBeamVolumes when bound true before ready (FR-A-01d)', async () => {
+      configure();
+      fixture.componentRef.setInput('showBeamVolumes', true);
+      await init();
+      expect(engine.setBeamVolumesVisible).toHaveBeenCalledWith(true);
+    });
+
+    it('leaves beam volumes off by default (FR-A-01d)', async () => {
+      configure();
+      await init();
+      expect(engine.setBeamVolumesVisible).not.toHaveBeenCalled();
+    });
   });
 
   describe('outputs', () => {

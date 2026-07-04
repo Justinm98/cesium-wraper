@@ -3,8 +3,10 @@
 A sample Angular 19 application showing off `@enterprise/cesium-wrapper`
 with an [Astro UXDS](https://www.astrouxds.com/) mission-control UI. The
 demo renders a satellite catalog (toggle tracking on/off), ground terminals
-(add/remove at runtime), and simulation speed controls — all driven through
-the library's `@Input()` bindings, never through Cesium APIs.
+(add/remove at runtime), simulation speed controls, and the v2 **beams &
+coverage** features (beam volumes, coverage recolor, link lines, external
+coverage feed) — all driven through the library's `@Input()` bindings, never
+through Cesium APIs.
 
 ## Run it
 
@@ -36,9 +38,23 @@ its dependencies resolve locally).
 | Realtime orbit animation with speed control | `[timeConfig]` + "Simulation Speed" panel |
 | Engine failure surfacing | `(initError)` → `rux-notification` banner |
 | Default bundled 3D models | No `model` on any config — the library falls back |
+| Antenna beams (circular + elliptical) | `beams` on `SatelliteConfig` in [src/app/app.component.ts](src/app/app.component.ts) |
+| Beam volume visibility toggle | `[showBeamVolumes]` ← "Beam volumes" switch |
+| Coverage computation (recolor covered terminals) | `[coverageComputationEnabled]` + `[coverageConfig]` ← "Coverage computation" switch |
+| Satellite→terminal link lines | `coverageConfig.showLinkLines` ← "Link lines" switch |
+| External coverage feed (authoritative override) | `[coverageAssignment]` ← "External feed" switch |
 
 The satellite catalog mixes one real (historic) ISS TLE with synthetic
 DEMO-* TLEs derived from it; they are valid orbits but not real spacecraft.
+
+**Beams & Coverage panel.** Beams render their ground footprint outline
+always; flip **Beam volumes** to also draw the translucent solid cones. Flip
+**Coverage computation** to recolor terminals green while a beam sweeps over
+them (raise the simulation speed to see passes quickly), and **Link lines**
+to draw a line to each covering satellite. **External feed** forces the DC
+gateway covered by the ISS from authoritative data — note it works **even
+with Coverage computation off**, because an external assignment is
+authoritative regardless of the computation toggle (decision M3).
 
 ## Consumer-side integration notes
 

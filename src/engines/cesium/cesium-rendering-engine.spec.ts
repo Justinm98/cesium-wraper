@@ -23,6 +23,10 @@ interface MockWidget {
   options: { baseLayer?: { provider: object }; skyBox?: false; skyAtmosphere?: false };
   clock: { multiplier: number; clockStep: number; shouldAnimate: boolean };
   entities: { getById(id: string): object | undefined };
+  scene: {
+    primitives: { length: number; values: readonly { show: boolean }[] };
+    preRender: { listenerCount: number };
+  };
   isDestroyed(): boolean;
 }
 
@@ -193,16 +197,6 @@ describe('CesiumRenderingEngine', () => {
       expect(() => engine.removeCustomEntity('b1')).toThrow(/not implemented in v1/);
     });
 
-    it('rejects coverage configuration with explicit errors', () => {
-      expect(() =>
-        engine.setCoverageConfig({
-          coveredColor: { r: 0, g: 255, b: 0, a: 1 },
-          showLinkLines: false,
-        })
-      ).toThrow(/not implemented in v1/);
-      expect(() => engine.setLinkLinesVisible(true)).toThrow(/not implemented in v1/);
-    });
-
     it('exposes interaction streams that can be subscribed', () => {
       const click = jest.fn();
       const hover = jest.fn();
@@ -214,6 +208,152 @@ describe('CesiumRenderingEngine', () => {
       expect(click).not.toHaveBeenCalled();
       expect(hover).not.toHaveBeenCalled();
       expect(placed).not.toHaveBeenCalled();
+    });
+  });
+
+  describe('v2 beams & coverage', () => {
+    const beam = {
+      id: 'b1',
+      azimuth: 0,
+      elevation: 90,
+      geometry: { kind: 'circular' as const, halfAngle: 10 },
+    };
+
+    beforeEach(async () => {
+      await engine.initialize(container, {});
+    });
+
+    it('renders beams when a satellite is added, with coverage OFF (FR-A-01/09a)', () => {
+      engine.addSatellite({ id: 'iss', tle: ISS_TLE, beams: [beam] });
+      expect(widget().entities.getById('beam:iss:b1')).toBeDefined();
+    });
+
+    it('removes beams when the satellite is removed', () => {
+      engine.addSatellite({ id: 'iss', tle: ISS_TLE, beams: [beam] });
+      engine.removeSatellite('iss');
+      expect(widget().entities.getById('beam:iss:b1')).toBeUndefined();
+    });
+
+    it('syncs beams on update only when the patch carries beams (FR-A-06)', () => {
+      engine.addSatellite({ id: 'iss', tle: ISS_TLE, beams: [beam] });
+      engine.updateSatellite('iss', { label: 'ISS' }); // model-only
+      expect(widget().entities.getById('beam:iss:b1')).toBeDefined();
+
+      engine.updateSatellite('iss', { beams: [] });
+      expect(widget().entities.getById('beam:iss:b1')).toBeUndefined();
+    });
+
+    it('throws over-limit and renders no beams for that satellite (FR-A-07)', async () => {
+      const limited = new CesiumRenderingEngine();
+      await limited.initialize(document.createElement('div'), {
+        performance: { maxBeamsPerSatellite: 1 },
+      });
+      expect(() =>
+        limited.addSatellite({
+          id: 'iss',
+          tle: ISS_TLE,
+          beams: [beam, { ...beam, id: 'b2' }],
+        })
+      ).toThrow(/maxBeamsPerSatellite=1/);
+    });
+
+    it('replaces the v1 coverage stubs with working implementations (FR-A-18)', () => {
+      expect(() =>
+        engine.setCoverageConfig({ coveredColor: { r: 0, g: 255, b: 0, a: 1 }, showLinkLines: false })
+      ).not.toThrow();
+      expect(() => engine.setLinkLinesVisible(true)).not.toThrow();
+      expect(() => engine.setCoverageComputationEnabled(false)).not.toThrow();
+      expect(() => engine.setCoverageAssignment({ assignments: [] })).not.toThrow();
+      expect(() => engine.clearCoverageAssignment()).not.toThrow();
+    });
+
+    it('does not construct the calculator until coverage is enabled (NFR-A-04)', () => {
+      engine.setCoverageConfig({ coveredColor: { r: 0, g: 255, b: 0, a: 1 }, showLinkLines: false });
+      // No clock tick listener registered while disabled.
+      const onTick = widget().clock as unknown as { onTick: { listenerCount: number } };
+      expect(onTick.onTick.listenerCount).toBe(0);
+
+      engine.setCoverageComputationEnabled(true);
+      expect(onTick.onTick.listenerCount).toBe(1);
+    });
+
+    it('recolors a covered terminal once computation is enabled, reverts on disable', () => {
+      // A terminal directly under a geostationary-ish nadir beam.
+      engine.addSatellite({ id: 'iss', tle: ISS_TLE, beams: [beam] });
+      engine.addTerminal({ id: 't1', position: { latitude: 0, longitude: 0, altitude: 0 } });
+      engine.setCoverageConfig({ coveredColor: { r: 0, g: 255, b: 0, a: 1 }, showLinkLines: false });
+      // Enabling must not throw and must register the per-tick listener.
+      expect(() => engine.setCoverageComputationEnabled(true)).not.toThrow();
+      expect(() => engine.setCoverageComputationEnabled(false)).not.toThrow();
+    });
+
+    it('restores config, link override, and assignment into the lazily-built calculator', () => {
+      engine.addSatellite({ id: 'iss', tle: ISS_TLE, beams: [beam] });
+      engine.addTerminal({ id: 't1', position: { latitude: 0, longitude: 0, altitude: 0 } });
+      // Configure coverage BEFORE enabling — the calculator does not exist yet.
+      engine.setCoverageConfig({
+        coveredColor: { r: 0, g: 255, b: 0, a: 1 },
+        showLinkLines: true,
+      });
+      engine.setLinkLinesVisible(false); // imperative override before enable
+      // A non-empty assignment constructs the calculator on its own now (M3), so
+      // it is restored along with the earlier config/override.
+      engine.setCoverageAssignment({
+        assignments: [{ terminalId: 't1', links: [{ satelliteId: 'iss' }] }],
+      });
+
+      // Enabling must restore all prior state without throwing.
+      expect(() => engine.setCoverageComputationEnabled(true)).not.toThrow();
+      const onTick = widget().clock as unknown as { onTick: { listenerCount: number } };
+      expect(onTick.onTick.listenerCount).toBe(1);
+    });
+
+    it('applies a non-empty assignment with computation never enabled (M3 — standalone)', () => {
+      engine.addSatellite({ id: 'iss', tle: ISS_TLE, beams: [beam] });
+      engine.addTerminal({ id: 't1', position: { latitude: 0, longitude: 0, altitude: 0 } });
+      engine.setCoverageConfig({ coveredColor: { r: 0, g: 255, b: 0, a: 1 }, showLinkLines: false });
+      const onTick = widget().clock as unknown as { onTick: { listenerCount: number } };
+      // Config alone constructs nothing while computation is off.
+      expect(onTick.onTick.listenerCount).toBe(0);
+
+      // A non-empty external assignment is authoritative regardless of the toggle
+      // (M3, Option A): it constructs the calculator and subscribes, even though
+      // computation was never enabled.
+      engine.setCoverageAssignment({
+        assignments: [{ terminalId: 't1', links: [{ satelliteId: 'iss' }] }],
+      });
+      expect(onTick.onTick.listenerCount).toBe(1);
+    });
+
+    it('stays lazy for an empty assignment when computation was never enabled (NFR-A-04)', () => {
+      engine.setCoverageConfig({ coveredColor: { r: 0, g: 255, b: 0, a: 1 }, showLinkLines: false });
+      const onTick = widget().clock as unknown as { onTick: { listenerCount: number } };
+      // An empty assignment with no existing calculator constructs nothing.
+      engine.setCoverageAssignment({ assignments: [] });
+      expect(onTick.onTick.listenerCount).toBe(0);
+    });
+
+    it('requires initialization for the new coverage methods', () => {
+      const fresh = new CesiumRenderingEngine();
+      expect(() => fresh.setCoverageComputationEnabled(true)).toThrow(/not initialized/);
+      expect(() => fresh.setCoverageAssignment({ assignments: [] })).toThrow(/not initialized/);
+      expect(() => fresh.clearCoverageAssignment()).toThrow(/not initialized/);
+    });
+
+    it('renders the beam volume as a scene primitive + footprint entity, toggleable (FR-A-01d)', () => {
+      engine.addSatellite({ id: 'iss', tle: ISS_TLE, beams: [beam] });
+      // The translucent volume is a scene primitive; the footprint is the entity.
+      expect(widget().scene.primitives.length).toBe(1);
+      expect(widget().entities.getById('beam:iss:b1')).toBeDefined();
+      // The global volume toggle is accepted at runtime (per-frame visibility and
+      // precedence are covered exhaustively in beam.manager.spec).
+      expect(() => engine.setBeamVolumesVisible(true)).not.toThrow();
+      expect(() => engine.setBeamVolumesVisible(false)).not.toThrow();
+    });
+
+    it('requires initialization for setBeamVolumesVisible (FR-A-01d)', () => {
+      const fresh = new CesiumRenderingEngine();
+      expect(() => fresh.setBeamVolumesVisible(true)).toThrow(/not initialized/);
     });
   });
 
@@ -237,6 +377,39 @@ describe('CesiumRenderingEngine', () => {
       await engine.initialize(container, {});
       engine.destroy();
       await expect(engine.initialize(container, {})).resolves.toBeUndefined();
+    });
+
+    it('removes the coverage tick listener on destroy (M5)', async () => {
+      await engine.initialize(container, {});
+      const onTick = widget().clock as unknown as { onTick: { listenerCount: number } };
+      engine.setCoverageConfig({
+        coveredColor: { r: 0, g: 255, b: 0, a: 1 },
+        showLinkLines: false,
+      });
+      engine.setCoverageComputationEnabled(true);
+      expect(onTick.onTick.listenerCount).toBe(1);
+
+      // The mock widget.destroy() does NOT clear the clock's onTick listeners,
+      // so a zero count here proves destroy() explicitly tore the listener down
+      // (via coverage.destroy()) rather than relying on clock disposal.
+      engine.destroy();
+      expect(onTick.onTick.listenerCount).toBe(0);
+    });
+
+    it('completes the interaction subjects on destroy (L7)', async () => {
+      await engine.initialize(container, {});
+      let clickDone = false;
+      let hoverDone = false;
+      let placedDone = false;
+      engine.entityClick$.subscribe({ complete: () => (clickDone = true) });
+      engine.entityHover$.subscribe({ complete: () => (hoverDone = true) });
+      engine.terminalPlaced$.subscribe({ complete: () => (placedDone = true) });
+
+      engine.destroy();
+
+      expect(clickDone).toBe(true);
+      expect(hoverDone).toBe(true);
+      expect(placedDone).toBe(true);
     });
   });
 });

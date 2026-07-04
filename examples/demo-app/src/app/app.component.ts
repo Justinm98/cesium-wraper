@@ -1,6 +1,8 @@
 import { CUSTOM_ELEMENTS_SCHEMA, Component } from '@angular/core';
 import {
   CesiumGlobeComponent,
+  CoverageAssignment,
+  CoverageConfig,
   GlobeConfig,
   SatelliteConfig,
   TerminalConfig,
@@ -30,6 +32,9 @@ const CATALOG: CatalogEntry[] = [
         line1: '1 25544U 98067A   24001.50000000  .00016717  00000-0  10270-3 0  9000',
         line2: '2 25544  51.6400 208.9163 0006317  69.9862  25.2906 15.49560532    15',
       },
+      // A wide nadir circular beam: terminals it sweeps over recolor when
+      // coverage computation is on. Geometry is the only required beam field.
+      beams: [{ id: 'main', azimuth: 0, elevation: 90, geometry: { kind: 'circular', halfAngle: 18 } }],
     },
   },
   {
@@ -41,6 +46,17 @@ const CATALOG: CatalogEntry[] = [
         line1: '1 90001U 98067A   24001.50000000  .00016717  00000-0  10270-3 0  9000',
         line2: '2 90001  97.4000 100.0000 0006317  69.9862 200.0000 14.20000000    15',
       },
+      // An elliptical beam — wider in azimuth than elevation. The footprint,
+      // volume, and coverage test are all truly elliptical.
+      beams: [
+        {
+          id: 'swath',
+          azimuth: 0,
+          elevation: 90,
+          geometry: { kind: 'elliptical', azimuthHalfAngle: 22, elevationHalfAngle: 10 },
+          color: { r: 255, g: 180, b: 0, a: 1 },
+        },
+      ],
     },
   },
   {
@@ -52,6 +68,7 @@ const CATALOG: CatalogEntry[] = [
         line1: '1 90002U 98067A   24001.50000000  .00016717  00000-0  10270-3 0  9000',
         line2: '2 90002  53.0000 310.0000 0006317 150.0000  80.0000 15.05000000    15',
       },
+      beams: [{ id: 'main', azimuth: 0, elevation: 90, geometry: { kind: 'circular', halfAngle: 14 } }],
     },
   },
   {
@@ -99,6 +116,26 @@ export class AppComponent {
   /** Cloud-free satellite imagery instead of the OSM street map default. */
   globeConfig: GlobeConfig = { tileProvider: { type: 'satellite' } };
 
+  // --- v2: Beams & Coverage -------------------------------------------------
+  /** Shows the translucent solid beam volumes; footprints always render. */
+  showBeamVolumes = false;
+  /** Turns the geometric covered-set computation on/off (recolor + link lines). */
+  coverageEnabled = false;
+  /** How covered terminals + link lines look. Replaced immutably on toggle. */
+  coverageConfig: CoverageConfig = {
+    coveredColor: { r: 80, g: 255, b: 140, a: 1 },
+    showLinkLines: true,
+    linkLineColor: { r: 80, g: 255, b: 140, a: 1 },
+  };
+  /** Whether the external-feed override is active (see {@link toggleExternalFeed}). */
+  externalFeedOn = false;
+  /**
+   * External coverage assignment, or undefined for none. When set it is
+   * authoritative for the named terminals regardless of {@link coverageEnabled}
+   * (M3) — i.e. the DC gateway colors/links even with computation OFF.
+   */
+  coverageAssignment?: CoverageAssignment;
+
   /** Form state for the "add ground terminal" panel. */
   newTerminalName = '';
   newTerminalLat = '';
@@ -115,6 +152,35 @@ export class AppComponent {
 
   setSpeed(multiplier: number): void {
     this.timeConfig = { mode: 'realtime', multiplier };
+  }
+
+  toggleBeamVolumes(): void {
+    this.showBeamVolumes = !this.showBeamVolumes;
+  }
+
+  toggleCoverage(): void {
+    this.coverageEnabled = !this.coverageEnabled;
+  }
+
+  toggleLinkLines(): void {
+    // Replace immutably so the component's ngOnChanges sees a new coverageConfig.
+    this.coverageConfig = {
+      ...this.coverageConfig,
+      showLinkLines: !this.coverageConfig.showLinkLines,
+    };
+  }
+
+  /**
+   * Toggles an external coverage feed that declares the DC gateway covered by
+   * the ISS. Demonstrates the M3 behavior: this colors/links DC even when
+   * coverage computation is OFF (the assignment is authoritative; no geometry
+   * runs for the other terminals).
+   */
+  toggleExternalFeed(): void {
+    this.externalFeedOn = !this.externalFeedOn;
+    this.coverageAssignment = this.externalFeedOn
+      ? { assignments: [{ terminalId: 'gs-dc', links: [{ satelliteId: 'iss' }] }] }
+      : undefined;
   }
 
   addTerminal(): void {

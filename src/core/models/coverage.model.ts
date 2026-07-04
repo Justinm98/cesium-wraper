@@ -1,7 +1,7 @@
 import { ColorConfig } from './position.model';
 
 /**
- * How beam coverage is visualized on terminals (post-v1 rendering).
+ * How beam coverage is visualized on terminals (v2 rendering).
  */
 export interface CoverageConfig {
   /** Color applied to a terminal while inside any beam footprint. */

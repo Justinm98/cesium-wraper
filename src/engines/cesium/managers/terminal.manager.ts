@@ -1,6 +1,6 @@
-import { Cartesian3, EntityCollection } from '@cesium/engine';
+import { Cartesian3, Color, EntityCollection } from '@cesium/engine';
 
-import { GeodeticPosition } from '../../../core/models/position.model';
+import { ColorConfig, GeodeticPosition } from '../../../core/models/position.model';
 import { TerminalConfig } from '../../../core/models/terminal.model';
 import { ModelLoader } from '../services/model-loader.service';
 
@@ -75,6 +75,47 @@ export class TerminalManager {
 
   get count(): number {
     return this.configs.size;
+  }
+
+  /** Ids of all terminals currently in the scene (consumer-facing, un-namespaced). */
+  get ids(): readonly string[] {
+    return [...this.configs.keys()];
+  }
+
+  /**
+   * The terminal's earth-fixed position in meters, for the coverage
+   * computation. Returns `undefined` for an unknown id.
+   */
+  getPositionEcef(id: string): { x: number; y: number; z: number } | undefined {
+    const config = this.configs.get(id);
+    if (config === undefined) {
+      return undefined;
+    }
+    const { latitude, longitude, altitude } = config.position;
+    const c = Cartesian3.fromDegrees(longitude, latitude, altitude);
+    return { x: c.x, y: c.y, z: c.z };
+  }
+
+  /**
+   * Overlays a coverage color on the terminal's model, or clears the overlay
+   * (reverting to the developer-supplied model default) when `color` is
+   * `undefined`. The overlay is kept separate from the base config so the
+   * coverage disable/clear path reverts cleanly without disturbing the model
+   * the developer supplied (FR-A-09/10/11; architecture-v2 §3.2.E). No-op on
+   * an unknown id.
+   */
+  setCoverageColor(id: string, color: ColorConfig | undefined): void {
+    // Cesium's Entity types the model graphic strictly; the overlay sets the
+    // glTF `model.color` directly, so the entity is treated structurally (via
+    // unknown) to set a plain Color the same way the unit tests assert it.
+    const entity = this.entities.getById(ID_PREFIX + id) as unknown as
+      | { model?: { color?: Color | undefined } }
+      | undefined;
+    if (entity === undefined || entity.model === undefined) {
+      return;
+    }
+    entity.model.color =
+      color === undefined ? undefined : Color.fromBytes(color.r, color.g, color.b, color.a * 255);
   }
 
   private buildEntityOptions(config: TerminalConfig): object {

@@ -37,6 +37,11 @@ yarn-error.log
 testem.log
 /typings
 
+# Smoke test (Playwright / real-Cesium) artifacts
+/smoke/.served
+/test-results
+/playwright-report
+
 # System files
 .DS_Store
 Thumbs.db
