@@ -5,13 +5,34 @@ visualization. Applications depend on engine-agnostic abstractions — no
 Cesium types appear in the public API, so the rendering engine can be
 replaced without touching consumer code.
 
-**v1 scope:** satellites positioned from TLE orbital data and ground
+## Screenshots
+
+All views below come from [`examples/demo-app`](examples/demo-app) — an
+Angular mission-control app driven entirely through this library's public
+`@Input()` bindings, never through Cesium APIs.
+
+**Satellites and ground terminals on a live globe.** TLE-propagated
+satellites (ISS + synthetic demo orbits) and lat/lon/alt terminals rendered
+over satellite imagery, with real-time orbital animation.
+
+![The demo app: a satellite-imagery globe over the Americas with labelled satellites (ISS, DEMO POLAR-1, DEMO LEO-2) and ground terminals (DC Gateway, Hawaii Relay), framed by a mission-control side panel.](docs/images/demo-globe.png)
+
+**Coverage link lines.** When a satellite covers a terminal, the library
+draws a link line between them — here the DC Gateway is linked to the ISS.
+Coverage can be computed geometrically or supplied from an authoritative
+external feed.
+
+![The globe with a green link line drawn from the DC Gateway terminal out to the covering ISS satellite.](docs/images/demo-coverage-link-lines.png)
+
+**v2 scope:** satellites positioned from TLE orbital data and ground
 terminals positioned from lat/lon/alt, rendered as 3D models on an
-interactive globe with real-time orbital animation. Beams, coverage,
-drag-and-drop placement, playback, and click/hover events are designed into
-the API but not yet implemented — they fail with explicit errors rather
-than silently doing nothing. See [docs/requirements.md](docs/requirements.md)
-and [docs/architecture.md](docs/architecture.md).
+interactive globe with real-time orbital animation, plus **beams & coverage**
+(beam footprints, opt-in coverage computation, and satellite→terminal link
+lines). Drag-and-drop placement, playback, and click/hover events are
+designed into the API but not yet implemented — they fail with explicit
+errors rather than silently doing nothing. See
+[docs/requirements.md](docs/requirements.md) and
+[docs/architecture.md](docs/architecture.md).
 
 ## Requirements
 
